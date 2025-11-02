@@ -1,53 +1,53 @@
-# from news_agent import analyze_company_sentiment  # Commented out - not testing
-# from social_agent import run_social_agent  # Commented out - not testing
-# from analyst_agent import run_analyst_agent  # Commented out - not testing
+from news_agent import analyze_company_sentiment  # Commented out - not testing
+from social_agent import run_social_agent  # Commented out - not testing
+from analyst_agent import run_analyst_agent  # Commented out - not testing
 from sec_agent import run_sec_agent
 from risk_assessment_agent import run_risk_assessment_agent
 
-# # Test News Agent
-# print("\n" + "=" * 70)
-# print("Testing News Sentiment Agent")
-# print("=" * 70)
+# Test News Agent
+print("\n" + "=" * 70)
+print("Testing News Sentiment Agent")
+print("=" * 70)
 
-# company_name = "Apple"
+company_name = "Apple"
 
-# news_result = analyze_company_sentiment(
-#     company_name=company_name,
-#     max_articles=30,
-#     lookback_days=7,
-#     verbose=True,
-# )
+news_result = analyze_company_sentiment(
+    company_name=company_name,
+    max_articles=30,
+    lookback_days=7,
+    verbose=True,
+)
 
-# print("\n📊 News Agent Result:")
-# print(news_result)
+print("\n📊 News Agent Result:")
+print(news_result)
 
-# # Test Social Agent
-# print("\n" + "=" * 70)
-# print("Testing Social Sentiment Agent")
-# print("=" * 70)
+# Test Social Agent
+print("\n" + "=" * 70)
+print("Testing Social Sentiment Agent")
+print("=" * 70)
 
 ticker = "AAPL"
 
-# social_result = run_social_agent(
-#     ticker=ticker, save_to_file=False  # Don't save to file during testing
-# )
+social_result = run_social_agent(
+    ticker=ticker, save_to_file=False  # Don't save to file during testing
+)
 
-# print("\n📊 Social Agent Result:")
-# print("\n📊 Social Agent Result:")
-# print("\n📊 Social Agent Result:")
-# print(social_result)
+print("\n📊 Social Agent Result:")
+print("\n📊 Social Agent Result:")
+print("\n📊 Social Agent Result:")
+print(social_result)
 
-# # Test Analyst Agent
-# print("\n" + "=" * 70)
-# print("Testing Analyst Agent")
-# print("=" * 70)
+# Test Analyst Agent
+print("\n" + "=" * 70)
+print("Testing Analyst Agent")
+print("=" * 70)
 
-# analyst_result = run_analyst_agent(
-#     ticker=ticker, save_to_file=False  # Don't save to file during testing
-# )
+analyst_result = run_analyst_agent(
+    ticker=ticker, save_to_file=False  # Don't save to file during testing
+)
 
-# print("\n📊 Analyst Agent Result:")
-# print(analyst_result)
+print("\n📊 Analyst Agent Result:")
+print(analyst_result)
 
 # Test SEC Agent
 print("\n" + "=" * 70)

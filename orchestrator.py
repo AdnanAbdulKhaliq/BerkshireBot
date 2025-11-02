@@ -49,11 +49,19 @@ RETRY_CONFIG = {
 
 # --- STATE DEFINITION (MODIFIED) ---
 
+def merge_lists(left: list | None, right: list | None) -> list:
+    """Merge two lists, used for errors and warnings."""
+    if left is None:
+        left = []
+    if right is None:
+        right = []
+    return left + right
+
 
 class AnalystSwarmState(TypedDict):
     """The state object that flows through the entire workflow."""
 
-    # Input
+    # Input (read-only after initialization)
     ticker: str
     timestamp: str
 
@@ -97,8 +105,8 @@ class AnalystSwarmState(TypedDict):
 
     # Final Status
     workflow_status: str
-    errors: list
-    warnings: list
+    errors: Annotated[list, merge_lists]
+    warnings: Annotated[list, merge_lists]
 
 
 # --- RETRY LOGIC DECORATOR ---
@@ -188,7 +196,7 @@ def with_retry(
 # --- AGENT NODE FUNCTIONS (MODIFIED) ---
 
 @with_retry("SEC Agent")
-def sec_agent_node(state: AnalystSwarmState) -> AnalystSwarmState:
+def sec_agent_node(state: AnalystSwarmState) -> dict:
     """Run the SEC Agent."""
     print(f"\n🔍 Running SEC Agent for ${state['ticker']}...")
     try:
@@ -196,22 +204,25 @@ def sec_agent_node(state: AnalystSwarmState) -> AnalystSwarmState:
         if "error" in result:
              raise Exception(result["error"])
         
-        state["sec_agent_summary"] = result.get("summary_report", str(result))
-        state["sec_agent_detailed"] = result.get("detailed_report", "No detailed report available.")
-        state["sec_agent_status"] = "success"
         print("✅ SEC Agent completed")
+        return {
+            "sec_agent_summary": result.get("summary_report", str(result)),
+            "sec_agent_detailed": result.get("detailed_report", "No detailed report available."),
+            "sec_agent_status": "success"
+        }
     except Exception as e:
         print(f"❌ SEC Agent failed: {e}")
         error_msg = f"Error: {str(e)}"
-        state["sec_agent_summary"] = error_msg
-        state["sec_agent_detailed"] = error_msg
-        state["sec_agent_status"] = "failed"
-        state.setdefault("errors", []).append(f"SEC Agent: {str(e)}")
-    return state
+        return {
+            "sec_agent_summary": error_msg,
+            "sec_agent_detailed": error_msg,
+            "sec_agent_status": "failed",
+            "errors": [f"SEC Agent: {str(e)}"]
+        }
 
 
 @with_retry("News Agent")
-def news_agent_node(state: AnalystSwarmState) -> AnalystSwarmState:
+def news_agent_node(state: AnalystSwarmState) -> dict:
     """Run the News Agent."""
     print(f"\n📰 Running News Agent for ${state['ticker']}...")
     try:
@@ -232,22 +243,25 @@ def news_agent_node(state: AnalystSwarmState) -> AnalystSwarmState:
 * High-Impact Articles: {result['high_impact_count']}
 {result['dashboard_summary']}
         """
-        state["news_agent_summary"] = summary
-        state["news_agent_detailed"] = json.dumps(result, indent=2, default=str)
-        state["news_agent_status"] = "success"
         print("✅ News Agent completed")
+        return {
+            "news_agent_summary": summary,
+            "news_agent_detailed": json.dumps(result, indent=2, default=str),
+            "news_agent_status": "success"
+        }
     except Exception as e:
         print(f"❌ News Agent failed: {e}")
         error_msg = f"Error: {str(e)}"
-        state["news_agent_summary"] = error_msg
-        state["news_agent_detailed"] = error_msg
-        state["news_agent_status"] = "failed"
-        state.setdefault("errors", []).append(f"News Agent: {str(e)}")
-    return state
+        return {
+            "news_agent_summary": error_msg,
+            "news_agent_detailed": error_msg,
+            "news_agent_status": "failed",
+            "errors": [f"News Agent: {str(e)}"]
+        }
 
 
 @with_retry("Social Agent")
-def social_agent_node(state: AnalystSwarmState) -> AnalystSwarmState:
+def social_agent_node(state: AnalystSwarmState) -> dict:
     """Run the Social Sentiment Agent with retry logic."""
     print(f"\n💬 Running Social Agent for ${state['ticker']}...")
     try:
@@ -255,22 +269,25 @@ def social_agent_node(state: AnalystSwarmState) -> AnalystSwarmState:
         if "error" in result:
              raise Exception(result["error"])
 
-        state["social_agent_summary"] = result.get("summary_report", str(result))
-        state["social_agent_detailed"] = result.get("detailed_report", "No detailed report available.")
-        state["social_agent_status"] = "success"
         print("✅ Social Agent completed")
+        return {
+            "social_agent_summary": result.get("summary_report", str(result)),
+            "social_agent_detailed": result.get("detailed_report", "No detailed report available."),
+            "social_agent_status": "success"
+        }
     except Exception as e:
         print(f"❌ Social Agent failed: {e}")
         error_msg = f"Error: {str(e)}"
-        state["social_agent_summary"] = error_msg
-        state["social_agent_detailed"] = error_msg
-        state["social_agent_status"] = "failed"
-        state.setdefault("errors", []).append(f"Social Agent: {str(e)}")
-    return state
+        return {
+            "social_agent_summary": error_msg,
+            "social_agent_detailed": error_msg,
+            "social_agent_status": "failed",
+            "errors": [f"Social Agent: {str(e)}"]
+        }
 
 
 @with_retry("Chart Agent")
-def chart_agent_node(state: AnalystSwarmState) -> AnalystSwarmState:
+def chart_agent_node(state: AnalystSwarmState) -> dict:
     """Run the Chart/Technical Analysis Agent (placeholder)."""
     print(f"\n📊 Running Chart Agent for ${state['ticker']}...")
     try:
@@ -282,22 +299,25 @@ def chart_agent_node(state: AnalystSwarmState) -> AnalystSwarmState:
 * Momentum indicators
 *Note: Full Chart agent implementation pending*
         """
-        state["chart_agent_summary"] = report
-        state["chart_agent_detailed"] = report  # Summary and detailed are the same for placeholder
-        state["chart_agent_status"] = "success"
         print("✅ Chart Agent completed")
+        return {
+            "chart_agent_summary": report,
+            "chart_agent_detailed": report,  # Summary and detailed are the same for placeholder
+            "chart_agent_status": "success"
+        }
     except Exception as e:
         print(f"❌ Chart Agent failed: {e}")
         error_msg = f"Error: {str(e)}"
-        state["chart_agent_summary"] = error_msg
-        state["chart_agent_detailed"] = error_msg
-        state["chart_agent_status"] = "failed"
-        state.setdefault("errors", []).append(f"Chart Agent: {str(e)}")
-    return state
+        return {
+            "chart_agent_summary": error_msg,
+            "chart_agent_detailed": error_msg,
+            "chart_agent_status": "failed",
+            "errors": [f"Chart Agent: {str(e)}"]
+        }
 
 
 @with_retry("Analyst Agent")
-def analyst_agent_node(state: AnalystSwarmState) -> AnalystSwarmState:
+def analyst_agent_node(state: AnalystSwarmState) -> dict:
     """Run the Professional Analyst Ratings Agent with retry logic."""
     print(f"\n📊 Running Analyst Agent for ${state['ticker']}...")
     try:
@@ -305,22 +325,25 @@ def analyst_agent_node(state: AnalystSwarmState) -> AnalystSwarmState:
         if "error" in result:
              raise Exception(result["error"])
 
-        state["analyst_agent_summary"] = result.get("summary_report", str(result))
-        state["analyst_agent_detailed"] = result.get("detailed_report", "No detailed report available.")
-        state["analyst_agent_status"] = "success"
         print("✅ Analyst Agent completed")
+        return {
+            "analyst_agent_summary": result.get("summary_report", str(result)),
+            "analyst_agent_detailed": result.get("detailed_report", "No detailed report available."),
+            "analyst_agent_status": "success"
+        }
     except Exception as e:
         print(f"❌ Analyst Agent failed: {e}")
         error_msg = f"Error: {str(e)}"
-        state["analyst_agent_summary"] = error_msg
-        state["analyst_agent_detailed"] = error_msg
-        state["analyst_agent_status"] = "failed"
-        state.setdefault("errors", []).append(f"Analyst Agent: {str(e)}")
-    return state
+        return {
+            "analyst_agent_summary": error_msg,
+            "analyst_agent_detailed": error_msg,
+            "analyst_agent_status": "failed",
+            "errors": [f"Analyst Agent: {str(e)}"]
+        }
 
 
 @with_retry("Governor Agent", max_retries=1)
-def governor_agent_node(state: AnalystSwarmState) -> AnalystSwarmState:
+def governor_agent_node(state: AnalystSwarmState) -> dict:
     """Run the Governor Agent to synthesize all specialist reports."""
     print(f"\n🎯 Running Governor Agent for ${state['ticker']}...")
     try:
@@ -337,22 +360,25 @@ def governor_agent_node(state: AnalystSwarmState) -> AnalystSwarmState:
         if "error" in result:
              raise Exception(result["error"])
 
-        state["governor_summary"] = result.get("summary_report", str(result))
-        state["governor_full_memo"] = result.get("detailed_report", "No detailed memo available.")
-        state["governor_status"] = "success"
         print("✅ Governor Agent completed")
+        return {
+            "governor_summary": result.get("summary_report", str(result)),
+            "governor_full_memo": result.get("detailed_report", "No detailed memo available."),
+            "governor_status": "success"
+        }
     except Exception as e:
         print(f"❌ Governor Agent failed: {e}")
         error_msg = f"Error: {str(e)}"
-        state["governor_summary"] = error_msg
-        state["governor_full_memo"] = error_msg
-        state["governor_status"] = "failed"
-        state.setdefault("errors", []).append(f"Governor Agent: {str(e)}")
-    return state
+        return {
+            "governor_summary": error_msg,
+            "governor_full_memo": error_msg,
+            "governor_status": "failed",
+            "errors": [f"Governor Agent: {str(e)}"]
+        }
 
 
 @with_retry("Risk Assessment Agent", max_retries=1)
-def risk_assessment_node(state: AnalystSwarmState) -> AnalystSwarmState:
+def risk_assessment_node(state: AnalystSwarmState) -> dict:
     """Run the Risk Assessment Agent on the Governor's memo."""
     print(f"\n⚠️ Running Risk Assessment Agent for ${state['ticker']}...")
     try:
@@ -367,30 +393,37 @@ def risk_assessment_node(state: AnalystSwarmState) -> AnalystSwarmState:
             if "error" in result:
                 raise Exception(result["error"])
 
-            state["risk_summary"] = result.get("summary_report", str(result))
-            state["risk_full_report"] = result.get("detailed_report", "No detailed report available.")
-            state["risk_status"] = "success"
             print("✅ Risk Assessment Agent completed")
+            return {
+                "risk_summary": result.get("summary_report", str(result)),
+                "risk_full_report": result.get("detailed_report", "No detailed report available."),
+                "risk_status": "success"
+            }
         else:
             skip_msg = "Skipped: Governor Agent failed or memo not available"
-            state["risk_summary"] = skip_msg
-            state["risk_full_report"] = skip_msg
-            state["risk_status"] = "skipped"
             print("⚠️ Risk Assessment skipped due to Governor failure")
+            return {
+                "risk_summary": skip_msg,
+                "risk_full_report": skip_msg,
+                "risk_status": "skipped"
+            }
     except Exception as e:
         print(f"❌ Risk Assessment Agent failed: {e}")
         error_msg = f"Error: {str(e)}"
-        state["risk_summary"] = error_msg
-        state["risk_full_report"] = error_msg
-        state["risk_status"] = "failed"
-        state.setdefault("errors", []).append(f"Risk Assessment Agent: {str(e)}")
-    return state
+        return {
+            "risk_summary": error_msg,
+            "risk_full_report": error_msg,
+            "risk_status": "failed",
+            "errors": [f"Risk Assessment: {str(e)}"]
+        }
 
 
 # --- WORKFLOW CONSTRUCTION ---
 
 def create_analyst_swarm_workflow() -> StateGraph:
     """Create the LangGraph workflow with retry-enabled agents."""
+    from langgraph.graph import START
+    
     workflow = StateGraph(AnalystSwarmState)
     workflow.add_node("sec_agent", sec_agent_node)
     workflow.add_node("news_agent", news_agent_node)
@@ -400,17 +433,21 @@ def create_analyst_swarm_workflow() -> StateGraph:
     workflow.add_node("governor", governor_agent_node)
     workflow.add_node("risk_assessment", risk_assessment_node)
 
-    workflow.set_entry_point("sec_agent")
-    workflow.set_entry_point("news_agent")
-    workflow.set_entry_point("social_agent")
-    workflow.set_entry_point("chart_agent")
-    workflow.set_entry_point("analyst_agent")
+    # Connect START to all specialist agents (they run in parallel)
+    workflow.add_edge(START, "sec_agent")
+    workflow.add_edge(START, "news_agent")
+    workflow.add_edge(START, "social_agent")
+    workflow.add_edge(START, "chart_agent")
+    workflow.add_edge(START, "analyst_agent")
 
+    # All specialist agents feed into governor
     workflow.add_edge("sec_agent", "governor")
     workflow.add_edge("news_agent", "governor")
     workflow.add_edge("social_agent", "governor")
     workflow.add_edge("chart_agent", "governor")
     workflow.add_edge("analyst_agent", "governor")
+    
+    # Governor feeds into risk assessment, which ends
     workflow.add_edge("governor", "risk_assessment")
     workflow.add_edge("risk_assessment", END)
 

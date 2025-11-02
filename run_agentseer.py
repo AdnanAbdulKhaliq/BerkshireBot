@@ -25,18 +25,21 @@ try:
         chart_agent_node,
         analyst_agent_node,
         governor_agent_node,
-        risk_assessment_node
+        risk_assessment_node,
     )
 except ImportError as e:
     print(f"❌ Error: Could not import from orchestrator.py: {e}")
-    print("Make sure orchestrator.py is in the same directory and has all dependencies.")
+    print(
+        "Make sure orchestrator.py is in the same directory and has all dependencies."
+    )
     sys.exit(1)
 
 # --- UTILITIES ---
 
+
 def setup_directories():
     """Ensure all required directories exist."""
-    directories = ['reports', 'workflow_states', 'logs']
+    directories = ["reports", "workflow_states", "logs"]
     for directory in directories:
         Path(directory).mkdir(exist_ok=True)
 
@@ -44,97 +47,109 @@ def setup_directories():
 def save_analysis_summary(ticker: str, state: dict):
     """Save a summary of the analysis to a central index file."""
     index_file = "workflow_states/analysis_index.json"
-    
+
     if os.path.exists(index_file):
         try:
-            with open(index_file, 'r') as f:
+            with open(index_file, "r") as f:
                 index = json.load(f)
         except json.JSONDecodeError:
             index = {"analyses": []}
     else:
         index = {"analyses": []}
-    
+
     summary = {
         "ticker": ticker,
-        "timestamp": state.get('timestamp'),
-        "workflow_status": state.get('workflow_status'),
-        "agents_completed": sum([
-            1 for status in [
-                state.get('sec_agent_status'),
-                state.get('news_agent_status'),
-                state.get('social_agent_status'),
-                state.get('chart_agent_status'),
-                state.get('analyst_agent_status')
-            ] if status == 'success'
-        ]),
-        "governor_status": state.get('governor_status'),
-        "risk_status": state.get('risk_status'),
-        "errors": state.get('errors', [])
+        "timestamp": state.get("timestamp"),
+        "workflow_status": state.get("workflow_status"),
+        "agents_completed": sum(
+            [
+                1
+                for status in [
+                    state.get("sec_agent_status"),
+                    state.get("news_agent_status"),
+                    state.get("social_agent_status"),
+                    state.get("chart_agent_status"),
+                    state.get("analyst_agent_status"),
+                ]
+                if status == "success"
+            ]
+        ),
+        "governor_status": state.get("governor_status"),
+        "risk_status": state.get("risk_status"),
+        "errors": state.get("errors", []),
     }
-    
+
     # Add to index, prevent duplicates
-    index["analyses"] = [s for s in index["analyses"] if s['ticker'] != ticker or s['timestamp'] != summary['timestamp']]
+    index["analyses"] = [
+        s
+        for s in index["analyses"]
+        if s["ticker"] != ticker or s["timestamp"] != summary["timestamp"]
+    ]
     index["analyses"].insert(0, summary)
     index["analyses"] = index["analyses"][:100]
-    
-    with open(index_file, 'w') as f:
+
+    with open(index_file, "w") as f:
         json.dump(index, f, indent=2)
 
 
 def load_latest_state(ticker: str) -> AnalystSwarmState | None:
     """Find and load the most recent workflow state file for a ticker."""
-    state_dir = Path('workflow_states')
+    state_dir = Path("workflow_states")
     state_files = list(state_dir.glob(f"{ticker.upper()}_workflow_state_*.json"))
-    
+
     if not state_files:
         return None
-    
+
     try:
         latest_file = max(state_files, key=lambda p: p.stat().st_mtime)
-        with open(latest_file, 'r') as f:
+        with open(latest_file, "r") as f:
             state = json.load(f)
         return state
     except Exception as e:
         print(f"❌ Error loading state for {ticker}: {e}")
         return None
 
+
 # --- SINGLE ANALYSIS ---
+
 
 def run_single_analysis(ticker: str):
     """Run analysis for a single ticker."""
     print(f"\n{'='*70}")
     print(f"🎯 Running AgentSeer Analysis: ${ticker}")
     print(f"{'='*70}\n")
-    
+
     setup_directories()
-    
+
     try:
         final_state = run_analyst_swarm(ticker, save_state=True)
         save_analysis_summary(ticker, final_state)
-        
-        print("\n" + "="*70)
+
+        print("\n" + "=" * 70)
         print("📊 ANALYSIS COMPLETE")
-        print("="*70)
+        print("=" * 70)
         print(f"\n✅ Status: {final_state.get('workflow_status', 'unknown')}")
-        
-        if final_state.get('errors'):
+
+        if final_state.get("errors"):
             print(f"⚠️ Errors: {len(final_state['errors'])} issue(s) encountered")
-            for error in final_state['errors']:
+            for error in final_state["errors"]:
                 print(f"  - {error}")
-        
+
         print(f"\n📄 Reports saved to 'reports/' directory")
         print(f"💾 State saved to 'workflow_states/' directory")
-        
+
         return final_state
-        
+
     except Exception as e:
         print(f"\n❌ Analysis failed: {e}")
         import traceback
+
         traceback.print_exc()
         return None
 
 
 # --- BATCH ANALYSIS ---
+
 
 def run_batch_analysis(tickers: list):
     """Run analysis for multiple tickers."""
@@ -143,81 +158,86 @@ def run_batch_analysis(tickers: list):
     print(f"{'='*70}")
     print(f"📊 Analyzing {len(tickers)} tickers: {', '.join(tickers)}")
     print(f"{'='*70}\n")
-    
+
     setup_directories()
-    
+
     results = []
     successful = 0
     failed = 0
-    
+
     for i, ticker in enumerate(tickers, 1):
         print(f"\n[{i}/{len(tickers)}] Processing ${ticker}...")
-        
+
         try:
             state = run_analyst_swarm(ticker, save_state=True)
             save_analysis_summary(ticker, state)
-            results.append((ticker, 'success', state))
+            results.append((ticker, "success", state))
             successful += 1
         except Exception as e:
             print(f"❌ Failed to analyze ${ticker}: {e}")
-            results.append((ticker, 'failed', str(e)))
+            results.append((ticker, "failed", str(e)))
             failed += 1
-    
-    print("\n" + "="*70)
+
+    print("\n" + "=" * 70)
     print("📊 BATCH ANALYSIS COMPLETE")
-    print("="*70)
+    print("=" * 70)
     print(f"\n✅ Successful: {successful}/{len(tickers)}")
     print(f"❌ Failed: {failed}/{len(tickers)}")
-    
+
     if failed > 0:
         print("\n⚠️ Failed tickers:")
         for ticker, status, error in results:
-            if status == 'failed':
+            if status == "failed":
                 print(f"  - ${ticker}: {error}")
-    
+
     return results
 
 
 # --- LIST ANALYSES ---
 
+
 def list_analyses():
     """List all previous analyses."""
     index_file = "workflow_states/analysis_index.json"
-    
+
     if not os.path.exists(index_file):
         print("📭 No analyses found. Run your first analysis to get started!")
         return
-    
-    with open(index_file, 'r') as f:
+
+    with open(index_file, "r") as f:
         index = json.load(f)
-    
-    analyses = index.get('analyses', [])
-    
+
+    analyses = index.get("analyses", [])
+
     if not analyses:
         print("📭 No analyses found.")
         return
-    
+
     print(f"\n{'='*70}")
     print(f"📊 AgentSeer Analysis History ({len(analyses)} total)")
     print(f"{'='*70}\n")
-    
+
     for i, analysis in enumerate(analyses[:20], 1):  # Show last 20
         status_emoji = {
-            'completed_successfully': '✅',
-            'completed_with_errors': '⚠️',
-            'failed': '❌'
-        }.get(analysis.get('workflow_status'), '❓')
-        
+            "completed_successfully": "✅",
+            "completed_with_errors": "⚠️",
+            "failed": "❌",
+        }.get(analysis.get("workflow_status"), "❓")
+
         print(f"{i}. {status_emoji} ${analysis['ticker']} - {analysis['timestamp']}")
-        print(f"   Agents: {analysis.get('agents_completed', 0)}/5 | "
-              f"Governor: {analysis.get('governor_status', 'N/A')} | "
-              f"Risk: {analysis.get('risk_status', 'N/A')}")
-        
-        if analysis.get('errors'):
+        print(
+            f"   Agents: {analysis.get('agents_completed', 0)}/5 | "
+            f"Governor: {analysis.get('governor_status', 'N/A')} | "
+            f"Risk: {analysis.get('risk_status', 'N/A')}"
+        )
+
+        if analysis.get("errors"):
             print(f"   ⚠️ {len(analysis['errors'])} error(s)")
         print()
 
+
 # --- NEW: Re-run Logic ---
+
 
 def rerun_agent_and_downstream(ticker: str, agent_name: str) -> Dict[str, Any]:
     """
@@ -225,19 +245,21 @@ def rerun_agent_and_downstream(ticker: str, agent_name: str) -> Dict[str, Any]:
     and then runs the downstream agents (Governor, Risk Assessment).
     """
     print(f"\n🔄 Re-running agent '{agent_name}' for ${ticker}...")
-    
+
     # 1. Map agent name to node function
     agent_node_map = {
         "sec": sec_agent_node,
         "news": news_agent_node,
         "social": social_agent_node,
         "chart": chart_agent_node,
-        "analyst": analyst_agent_node
+        "analyst": analyst_agent_node,
     }
-    
+
     if agent_name not in agent_node_map:
-        raise ValueError(f"Unknown agent: {agent_name}. Must be one of {list(agent_node_map.keys())}")
-        
+        raise ValueError(
+            f"Unknown agent: {agent_name}. Must be one of {list(agent_node_map.keys())}"
+        )
+
     node_to_run = agent_node_map[agent_name]
 
     # 2. Load the latest state
@@ -246,150 +268,207 @@ def rerun_agent_and_downstream(ticker: str, agent_name: str) -> Dict[str, Any]:
         raise FileNotFoundError(f"No previous state found for {ticker}. Cannot re-run.")
 
     # 3. Clear old errors/warnings related to this agent and downstream
-    state["errors"] = [e for e in state.get("errors", []) if not e.startswith(agent_name.capitalize())]
-    state["warnings"] = [w for w in state.get("warnings", []) if not w.startswith(agent_name.capitalize())]
-    
+    state["errors"] = [
+        e for e in state.get("errors", []) if not e.startswith(agent_name.capitalize())
+    ]
+    state["warnings"] = [
+        w
+        for w in state.get("warnings", [])
+        if not w.startswith(agent_name.capitalize())
+    ]
+
     # 4. Run the specified agent node
     print(f"--- Running {agent_name}_agent_node ---")
     state = node_to_run(state)
-    
+
     # 5. Run the downstream nodes (Governor and Risk Assessment)
     print(f"--- Running governor_agent_node ---")
     state = governor_agent_node(state)
-    
+
     print(f"--- Running risk_assessment_node ---")
     state = risk_assessment_node(state)
-    
+
     # 6. Update final status and save
-    state['timestamp'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    state["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     if state.get("errors"):
         state["workflow_status"] = "completed_with_errors"
     else:
         state["workflow_status"] = "completed_successfully"
-        
+
     save_workflow_state(ticker, state)
     save_analysis_summary(ticker, state)
-    
+
     print(f"✅ Re-run complete for ${ticker}. New state saved.")
     return state
 
 
-# --- WEB API SERVER (MODIFIED) ---
+# --- WEB API SERVER (FastAPI) ---
 
-def start_api_server(host='0.0.0.0', port=8000):
-    """Start a simple Flask API server for AgentSeer."""
+
+def start_api_server(host="0.0.0.0", port=8000):
+    """Start a FastAPI server for AgentSeer."""
     try:
-        from flask import Flask, request, jsonify
-        from flask_cors import CORS
+        from fastapi import FastAPI, HTTPException, BackgroundTasks
+        from fastapi.middleware.cors import CORSMiddleware
+        from pydantic import BaseModel
+        import uvicorn
     except ImportError:
-        print("❌ Flask not installed. Install with: pip install flask flask-cors")
+        print(
+            "❌ FastAPI not installed. Install with: pip install fastapi uvicorn[standard]"
+        )
         return
-    
-    app = Flask(__name__)
-    CORS(app)
-    
+
+    app = FastAPI(
+        title="AgentSeer API",
+        description="Multi-Agent Financial Analysis System",
+        version="2.0.0",
+    )
+
+    # Enable CORS
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
     setup_directories()
-    
-    @app.route('/api/analyze', methods=['POST'])
-    def analyze():
+
+    # Request/Response Models
+    class AnalyzeRequest(BaseModel):
+        ticker: str
+
+    class RerunRequest(BaseModel):
+        ticker: str
+        agent: str
+
+    class AnalyzeResponse(BaseModel):
+        status: str
+        ticker: str
+        workflow_status: str
+        timestamp: str
+        governor_summary: str | None = None
+        risk_summary: str | None = None
+
+    class RerunResponse(BaseModel):
+        status: str
+        ticker: str
+        agent_rerun: str
+        workflow_status: str
+        governor_summary: str | None = None
+        risk_summary: str | None = None
+
+    class HealthResponse(BaseModel):
+        status: str
+        service: str
+
+    class ReportResponse(BaseModel):
+        ticker: str
+        agent: str
+        report_type: str
+        content: str | None
+
+    @app.post("/api/analyze", response_model=AnalyzeResponse)
+    async def analyze(request: AnalyzeRequest, background_tasks: BackgroundTasks):
         """Analyze a stock ticker."""
-        data = request.json
-        ticker = data.get('ticker', '').upper()
-        
+        ticker = request.ticker.upper()
+
         if not ticker:
-            return jsonify({'error': 'No ticker provided'}), 400
-        
+            raise HTTPException(status_code=400, detail="No ticker provided")
+
         try:
             final_state = run_analyst_swarm(ticker, save_state=True)
             save_analysis_summary(ticker, final_state)
-            
-            return jsonify({
-                'status': 'success',
-                'ticker': ticker,
-                'workflow_status': final_state.get('workflow_status'),
-                'timestamp': final_state.get('timestamp'),
-                'governor_summary': final_state.get('governor_summary'),
-                'risk_summary': final_state.get('risk_summary')
-            })
+
+            return AnalyzeResponse(
+                status="success",
+                ticker=ticker,
+                workflow_status=final_state.get("workflow_status", "unknown"),
+                timestamp=final_state.get("timestamp", ""),
+                governor_summary=final_state.get("governor_summary"),
+                risk_summary=final_state.get("risk_summary"),
+            )
         except Exception as e:
-            return jsonify({'status': 'error', 'message': str(e)}), 500
-    
-    # --- NEW ENDPOINT: RERUN AGENT ---
-    @app.route('/api/rerun', methods=['POST'])
-    def rerun_agent():
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/api/rerun", response_model=RerunResponse)
+    async def rerun_agent(request: RerunRequest):
         """Re-run a specific agent for a ticker."""
-        data = request.json
-        ticker = data.get('ticker', '').upper()
-        agent_name = data.get('agent', '').lower() # e.g., "social", "sec"
-        
+        ticker = request.ticker.upper()
+        agent_name = request.agent.lower()
+
         if not ticker or not agent_name:
-            return jsonify({'error': 'Ticker and agent name are required'}), 400
-        
+            raise HTTPException(
+                status_code=400, detail="Ticker and agent name are required"
+            )
+
         try:
             new_state = rerun_agent_and_downstream(ticker, agent_name)
-            return jsonify({
-                'status': 'success',
-                'ticker': ticker,
-                'agent_rerun': agent_name,
-                'workflow_status': new_state.get('workflow_status'),
-                'governor_summary': new_state.get('governor_summary'),
-                'risk_summary': new_state.get('risk_summary')
-            })
+            return RerunResponse(
+                status="success",
+                ticker=ticker,
+                agent_rerun=agent_name,
+                workflow_status=new_state.get("workflow_status", "unknown"),
+                governor_summary=new_state.get("governor_summary"),
+                risk_summary=new_state.get("risk_summary"),
+            )
         except Exception as e:
-            return jsonify({'status': 'error', 'message': str(e)}), 500
+            raise HTTPException(status_code=500, detail=str(e))
 
-    @app.route('/api/analyses', methods=['GET'])
-    def get_analyses():
+    @app.get("/api/analyses")
+    async def get_analyses():
         """Get list of all analyses."""
         index_file = "workflow_states/analysis_index.json"
-        
+
         if not os.path.exists(index_file):
-            return jsonify({'analyses': []})
-        
+            return {"analyses": []}
+
         try:
-            with open(index_file, 'r') as f:
+            with open(index_file, "r") as f:
                 index = json.load(f)
+            return index
         except json.JSONDecodeError:
-            return jsonify({'analyses': []})
-        
-        return jsonify(index)
-    
-    @app.route('/api/analysis/<ticker>', methods=['GET'])
-    def get_analysis_state(ticker):
+            return {"analyses": []}
+
+    @app.get("/api/analysis/{ticker}")
+    async def get_analysis_state(ticker: str):
         """Get detailed analysis state for a specific ticker."""
         state = load_latest_state(ticker.upper())
         if not state:
-            return jsonify({'error': 'Analysis not found'}), 404
-        
-        return jsonify(state)
+            raise HTTPException(status_code=404, detail="Analysis not found")
 
-    # --- NEW ENDPOINT: GET SUMMARY REPORT ---
-    @app.route('/api/report/summary/<ticker>/<agent_name>', methods=['GET'])
-    def get_summary_report(ticker, agent_name):
+        return state
+
+    @app.get("/api/report/summary/{ticker}/{agent_name}", response_model=ReportResponse)
+    async def get_summary_report(ticker: str, agent_name: str):
         """Get a specific agent's summary report."""
         state = load_latest_state(ticker.upper())
         if not state:
-            return jsonify({'error': 'Analysis not found'}), 404
-        
+            raise HTTPException(status_code=404, detail="Analysis not found")
+
         key = f"{agent_name.lower()}_summary"
         if key not in state:
-            return jsonify({'error': f'Agent {agent_name} not found in state'}), 404
-            
-        return jsonify({
-            'ticker': ticker,
-            'agent': agent_name,
-            'report_type': 'summary',
-            'content': state.get(key)
-        })
+            raise HTTPException(
+                status_code=404, detail=f"Agent {agent_name} not found in state"
+            )
 
-    # --- NEW ENDPOINT: GET DETAILED REPORT ---
-    @app.route('/api/report/detailed/<ticker>/<agent_name>', methods=['GET'])
-    def get_detailed_report(ticker, agent_name):
+        return ReportResponse(
+            ticker=ticker,
+            agent=agent_name,
+            report_type="summary",
+            content=state.get(key),
+        )
+
+    @app.get(
+        "/api/report/detailed/{ticker}/{agent_name}", response_model=ReportResponse
+    )
+    async def get_detailed_report(ticker: str, agent_name: str):
         """Get a specific agent's detailed report."""
         state = load_latest_state(ticker.upper())
         if not state:
-            return jsonify({'error': 'Analysis not found'}), 404
-        
+            raise HTTPException(status_code=404, detail="Analysis not found")
+
         key = f"{agent_name.lower()}_detailed"
         if key not in state:
             # Fallback for governor/risk
@@ -398,42 +477,49 @@ def start_api_server(host='0.0.0.0', port=8000):
             elif agent_name == "risk":
                 key = "risk_full_report"
             else:
-                 return jsonify({'error': f'Agent {agent_name} not found in state'}), 404
-            
-        return jsonify({
-            'ticker': ticker,
-            'agent': agent_name,
-            'report_type': 'detailed',
-            'content': state.get(key)
-        })
+                raise HTTPException(
+                    status_code=404, detail=f"Agent {agent_name} not found in state"
+                )
 
-    @app.route('/api/health', methods=['GET'])
-    def health():
+        return ReportResponse(
+            ticker=ticker,
+            agent=agent_name,
+            report_type="detailed",
+            content=state.get(key),
+        )
+
+    @app.get("/api/health", response_model=HealthResponse)
+    async def health():
         """Health check endpoint."""
-        return jsonify({'status': 'healthy', 'service': 'AgentSeer API'})
-    
+        return HealthResponse(status="healthy", service="AgentSeer API")
+
     print(f"\n{'='*70}")
-    print(f"🚀 AgentSeer API Server Starting")
+    print(f"🚀 AgentSeer API Server Starting (FastAPI)")
     print(f"{'='*70}")
     print(f"\n📡 Server running on http://{host}:{port}")
+    print(f"📚 Interactive API docs: http://{host}:{port}/docs")
+    print(f"📖 Alternative docs: http://{host}:{port}/redoc")
     print(f"\n📝 Available endpoints:")
     print(f"  POST   /api/analyze           (Body: {{'ticker': 'TSLA'}})")
-    print(f"  POST   /api/rerun             (Body: {{'ticker': 'TSLA', 'agent': 'social'}})")
+    print(
+        f"  POST   /api/rerun             (Body: {{'ticker': 'TSLA', 'agent': 'social'}})"
+    )
     print(f"  GET    /api/analyses")
-    print(f"  GET    /api/analysis/<ticker>")
-    print(f"  GET    /api/report/summary/<ticker>/<agent>")
-    print(f"  GET    /api/report/detailed/<ticker>/<agent>")
+    print(f"  GET    /api/analysis/{{ticker}}")
+    print(f"  GET    /api/report/summary/{{ticker}}/{{agent}}")
+    print(f"  GET    /api/report/detailed/{{ticker}}/{{agent}}")
     print(f"  GET    /api/health")
     print(f"\n{'='*70}\n")
-    
-    app.run(host=host, port=port, debug=False)
+
+    uvicorn.run(app, host=host, port=port, log_level="info")
 
 
 # --- MAIN CLI ---
 
+
 def main():
     parser = argparse.ArgumentParser(
-        description='AgentSeer - Multi-Agent Financial Analysis System',
+        description="AgentSeer - Multi-Agent Financial Analysis System",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -441,18 +527,26 @@ Examples:
   python run_agentseer.py --batch TSLA AAPL MSFT  # Batch analysis
   python run_agentseer.py --list                  # List analyses
   python run_agentseer.py --server                # Start API server
-        """
+        """,
     )
-    
-    parser.add_argument('ticker', nargs='?', help='Stock ticker to analyze (e.g., TSLA)')
-    parser.add_argument('--batch', nargs='+', help='Analyze multiple tickers')
-    parser.add_argument('--list', action='store_true', help='List all previous analyses')
-    parser.add_argument('--server', action='store_true', help='Start API server')
-    parser.add_argument('--port', type=int, default=8000, help='API server port (default: 8000)')
-    parser.add_argument('--host', default='0.0.0.0', help='API server host (default: 0.0.0.0)')
-    
+
+    parser.add_argument(
+        "ticker", nargs="?", help="Stock ticker to analyze (e.g., TSLA)"
+    )
+    parser.add_argument("--batch", nargs="+", help="Analyze multiple tickers")
+    parser.add_argument(
+        "--list", action="store_true", help="List all previous analyses"
+    )
+    parser.add_argument("--server", action="store_true", help="Start API server")
+    parser.add_argument(
+        "--port", type=int, default=8000, help="API server port (default: 8000)"
+    )
+    parser.add_argument(
+        "--host", default="0.0.0.0", help="API server host (default: 0.0.0.0)"
+    )
+
     args = parser.parse_args()
-    
+
     if args.list:
         list_analyses()
     elif args.server:
