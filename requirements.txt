@@ -17,6 +17,7 @@ google-auth-oauthlib>=1.1.0
 # Financial Data APIs
 finnhub-python>=2.4.18
 sec-api>=1.0.0
+newsapi-python>=0.2.7
 
 # Web Framework (for API server)
 fastapi>=0.115.0
