@@ -322,11 +322,16 @@ def start_api_server(host="0.0.0.0", port=8000):
         from fastapi.middleware.cors import CORSMiddleware
         from pydantic import BaseModel
         import uvicorn
+        import asyncio
+        from concurrent.futures import ThreadPoolExecutor
     except ImportError:
         print(
             "❌ FastAPI not installed. Install with: pip install fastapi uvicorn[standard]"
         )
         return
+    
+    # Create a thread pool executor for running blocking I/O operations
+    executor = ThreadPoolExecutor(max_workers=10)
 
     app = FastAPI(
         title="AgentSeer API",
@@ -430,24 +435,31 @@ def start_api_server(host="0.0.0.0", port=8000):
             raise HTTPException(status_code=400, detail="No ticker provided")
 
         try:
-            # Call the agent function directly to get raw response
-            result = run_sec_agent(ticker, save_to_file=True)
+            # Run blocking call in executor
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                executor, run_sec_agent, ticker, True
+            )
             return result
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
     @app.post("/api/agents/news")
     async def run_news_agent_endpoint(request: TickerRequest):
-        """Run News Agent for a ticker and return the raw agent response."""
+        """Run News Sentiment Agent for a ticker and return the raw agent response."""
         ticker = request.ticker.upper()
 
         if not ticker:
             raise HTTPException(status_code=400, detail="No ticker provided")
 
         try:
-            # Call the agent function directly
-            result = analyze_company_sentiment(
-                ticker=ticker, max_articles=15, lookback_days=7, verbose=True
+            # Run blocking call in executor
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                executor,
+                lambda: analyze_company_sentiment(
+                    ticker=ticker, max_articles=15, lookback_days=7, verbose=True
+                ),
             )
             return result
         except Exception as e:
@@ -462,8 +474,11 @@ def start_api_server(host="0.0.0.0", port=8000):
             raise HTTPException(status_code=400, detail="No ticker provided")
 
         try:
-            # Call the agent function directly
-            result = run_social_agent(ticker, save_to_file=True)
+            # Run blocking call in executor
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                executor, run_social_agent, ticker, True
+            )
             return result
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
@@ -477,9 +492,12 @@ def start_api_server(host="0.0.0.0", port=8000):
             raise HTTPException(status_code=400, detail="No ticker provided")
 
         try:
-            # Chart agent is placeholder, so we'll use the node function
+            # Run blocking call in executor
+            loop = asyncio.get_event_loop()
             state: AnalystSwarmState = {"ticker": ticker}
-            result = chart_agent_node(state)
+            result = await loop.run_in_executor(
+                executor, chart_agent_node, state
+            )
 
             # Return a dictionary with the chart summary and detailed
             return {
@@ -501,8 +519,11 @@ def start_api_server(host="0.0.0.0", port=8000):
             raise HTTPException(status_code=400, detail="No ticker provided")
 
         try:
-            # Call the agent function directly
-            result = run_analyst_agent(ticker, save_to_file=True)
+            # Run blocking call in executor
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                executor, run_analyst_agent, ticker, True
+            )
             return result
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
@@ -525,8 +546,11 @@ def start_api_server(host="0.0.0.0", port=8000):
                 "Analyst Agent": request.analyst_summary or "Not available",
             }
 
-            # Call the agent function directly
-            result = run_governor_agent(ticker, agent_reports, save_to_file=True)
+            # Run blocking call in executor
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                executor, run_governor_agent, ticker, agent_reports, True
+            )
             return result
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
@@ -549,14 +573,21 @@ def start_api_server(host="0.0.0.0", port=8000):
                 "Analyst Agent": request.analyst_summary or "Not available",
             }
 
+            # Run blocking calls in executor
+            loop = asyncio.get_event_loop()
+            
             # First run governor to get the memo
-            gov_result = run_governor_agent(ticker, agent_reports, save_to_file=False)
+            gov_result = await loop.run_in_executor(
+                executor, run_governor_agent, ticker, agent_reports, False
+            )
 
             # Get the memo from governor result
             governor_memo = gov_result.get("detailed_report", "")
 
             # Run risk assessment with the memo
-            result = run_risk_assessment_agent(ticker, governor_memo, save_to_file=True)
+            result = await loop.run_in_executor(
+                executor, run_risk_assessment_agent, ticker, governor_memo, True
+            )
             return result
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
@@ -596,18 +627,12 @@ def start_api_server(host="0.0.0.0", port=8000):
             t = request.t
             sims = request.sims
             
-            print(f"\n{'='*70}")
-            print(f"🎲 Monte Carlo Simulation Request")
-            print(f"{'='*70}")
-            print(f"Ticker: {ticker}")
-            print(f"Days: {t}")
-            print(f"Simulations: {sims}")
-            print(f"{'='*70}\n")
-            
-            result = MC_sims(ticker, t, sims)
-            
-            print(f"\n✅ Monte Carlo simulation completed successfully for {ticker}")
-            
+            # Run blocking call in executor
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                executor, MC_sims, ticker, t, sims
+            )
+
             return MC_RolloutResponse(
                 status="success",
                 ticker=ticker,
@@ -616,13 +641,8 @@ def start_api_server(host="0.0.0.0", port=8000):
                 days=result["days"],
                 forecast=result["median"].tolist(),
             )
-        except ValueError as ve:
-            # ValueError contains user-friendly messages from MC_sims
-            print(f"\n❌ Monte Carlo error: {str(ve)}")
-            raise HTTPException(status_code=400, detail=str(ve))
         except Exception as e:
-            print(f"\n❌ Unexpected error in Monte Carlo: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))
 
     # --- NEW ENDPOINT: RERUN AGENT ---
     @app.post("/api/rerun", response_model=RerunResponse)
@@ -637,7 +657,11 @@ def start_api_server(host="0.0.0.0", port=8000):
             )
 
         try:
-            new_state = rerun_agent_and_downstream(ticker, agent_name)
+            # Run blocking call in executor
+            loop = asyncio.get_event_loop()
+            new_state = await loop.run_in_executor(
+                executor, rerun_agent_and_downstream, ticker, agent_name
+            )
             return RerunResponse(
                 status="success",
                 ticker=ticker,

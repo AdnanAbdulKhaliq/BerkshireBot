@@ -271,14 +271,27 @@ export function AnalystDashboard() {
     }
 
     setLoading(true);
+    setMcLoading(true);
     setError(null);
 
     try {
-      // Just fetch news agent data
-      const newsData = await getNewsAgentData(ticker);
+      // Fetch news agent data and Monte Carlo simulation in parallel
+      const [newsData, mcResult] = await Promise.all([
+        getNewsAgentData(ticker),
+        runMonteCarloSimulation(ticker, 30, 1000),
+      ]);
 
       // Set news articles
       setNewsArticles(convertNewsToDisplay(newsData));
+
+      // Set Monte Carlo data
+      if (mcResult.status === "success" && mcResult.forecast) {
+        const chartData = mcResult.forecast.map((price, index) => ({
+          day: index + 1,
+          price: price,
+        }));
+        setMcData(chartData);
+      }
 
       // Create a simple agent data entry for news agent to show sentiment
       const newsAgentData: AgentData = {
@@ -308,6 +321,7 @@ export function AnalystDashboard() {
       setError(err instanceof Error ? err.message : "Analysis failed");
     } finally {
       setLoading(false);
+      setMcLoading(false);
     }
   };
 
@@ -408,13 +422,72 @@ export function AnalystDashboard() {
               Stock Price Movement
             </CardTitle>
             <CardDescription>
-              Monte Carlo forecast (coming soon)
+              Monte Carlo Simulation - 30 Day Forecast
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="h-[300px] flex items-center justify-center text-sm text-muted-foreground">
-              Monte Carlo simulation temporarily disabled
-            </div>
+            {mcLoading ? (
+              <div className="h-[300px] flex items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : mcData.length > 0 ? (
+              <ChartContainer
+                config={{
+                  price: {
+                    label: "Price",
+                    color: "hsl(var(--chart-1))",
+                  },
+                }}
+                className="h-[300px]"
+              >
+                <AreaChart data={mcData}>
+                  <defs>
+                    <linearGradient id="fillPrice" x1="0" y1="0" x2="0" y2="1">
+                      <stop
+                        offset="5%"
+                        stopColor="var(--color-price)"
+                        stopOpacity={0.8}
+                      />
+                      <stop
+                        offset="95%"
+                        stopColor="var(--color-price)"
+                        stopOpacity={0.1}
+                      />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid vertical={false} />
+                  <XAxis
+                    dataKey="day"
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
+                    tickFormatter={(value) => `Day ${value}`}
+                  />
+                  <YAxis
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
+                    tickFormatter={(value) => `$${value.toFixed(0)}`}
+                  />
+                  <ChartTooltip
+                    cursor={false}
+                    content={<ChartTooltipContent indicator="line" />}
+                  />
+                  <Area
+                    dataKey="price"
+                    type="natural"
+                    fill="url(#fillPrice)"
+                    fillOpacity={0.4}
+                    stroke="var(--color-price)"
+                    stackId="a"
+                  />
+                </AreaChart>
+              </ChartContainer>
+            ) : (
+              <div className="h-[300px] flex items-center justify-center text-sm text-muted-foreground">
+                Run analysis to see Monte Carlo forecast
+              </div>
+            )}
           </CardContent>
         </Card>
 
