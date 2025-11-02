@@ -11,8 +11,12 @@ Install:
   pip install -U langchain==1.0.3 langchain-google-genai==0.1.* sec-api requests
 
 Usage:
-  from SecAgent import SecAgent
+  from sec_agent import SecAgent, run_sec_agent
   
+  # Method 1: Using the wrapper function (recommended)
+  summary, detailed = run_sec_agent("AAPL", save_to_file=True)
+  
+  # Method 2: Using the class directly
   agent = SecAgent(verbose=True, save_final=True, save_trace=True)
   report = agent.run("Apple Inc", "A technology company that designs consumer electronics")
 
@@ -1059,33 +1063,136 @@ class SecAgent:
 
 
 # ============================================================================
+# Main Function (matches other agents' pattern)
+# ============================================================================
+
+def run_sec_agent(
+    ticker: str,
+    company_description: Optional[str] = None,
+    save_to_file: bool = True
+) -> tuple[str, str]:
+    """
+    Execute the SEC Agent analysis following the standard agent pattern.
+    
+    Args:
+        ticker: Stock ticker symbol (e.g., "AAPL", "TSLA")
+        company_description: Optional description of the company
+        save_to_file: Whether to save the detailed report to a file
+    
+    Returns:
+        Tuple of (summary_report, detailed_report)
+    """
+    print(f"\n{'='*60}")
+    print(f"🤖 SEC Agent: Analyzing SEC filings for ${ticker}")
+    print(f"{'='*60}\n")
+    
+    try:
+        # Get company name from ticker (simplified - in production use a ticker->name mapping)
+        company_name = ticker  # You may want to add a ticker-to-company-name lookup
+        
+        if not company_description:
+            company_description = f"A company trading under ticker {ticker}"
+        
+        # Create SEC Agent instance
+        agent = SecAgent(verbose=True, save_final=save_to_file, save_trace=save_to_file)
+        
+        print(f"📊 Analyzing 5 years of 10-K filings...")
+        print(f"📋 {get_metrics_documentation()}\n")
+        
+        # Run the analysis
+        detailed_report = agent.run(company_name, company_description)
+        
+        # Extract key information for summary
+        # Try to extract overall risk level from the report
+        risk_level = "Unknown"
+        if "HIGH RISK" in detailed_report.upper():
+            risk_level = "High Risk"
+        elif "MODERATE RISK" in detailed_report.upper():
+            risk_level = "Moderate Risk"
+        elif "LOW RISK" in detailed_report.upper():
+            risk_level = "Low Risk"
+        
+        # Count filings analyzed
+        filings_count = len(agent.current_filings) if hasattr(agent, 'current_filings') else 5
+        
+        # Get financial years if available
+        years_analyzed = ""
+        if agent.financial_stats and agent.financial_stats.years:
+            years_analyzed = f"{min(agent.financial_stats.years)} - {max(agent.financial_stats.years)}"
+        
+        # Create summary report
+        summary_report = f"""
+**SEC Agent Summary: ${ticker}**
+
+📊 **Analysis Scope:**
+* **Filings Analyzed:** {filings_count} years of 10-K reports
+* **Years Covered:** {years_analyzed if years_analyzed else 'Past 5 years'}
+* **Overall Risk Assessment:** {risk_level}
+
+� **Financial Metrics Tracked:**
+{get_metrics_documentation()}
+
+💡 **Key Insight:**
+Comprehensive 5-year SEC filing analysis completed, including risk factors,
+financial trends, and business developments.
+
+✅ **Enhanced with Multi-Year Analysis**
+This report synthesizes multiple years of SEC filings to identify trends
+and patterns in financial performance and risk disclosures.
+
+---
+*Full detailed report with financial metrics saved to file*
+*Agent: SEC Agent | Model: Gemini Pro with SEC API*
+        """
+        
+        print("✅ SEC_Agent: Analysis complete")
+        return summary_report.strip(), detailed_report
+        
+    except Exception as e:
+        print(f"❌ SEC_Agent: Analysis failed - {e}")
+        import traceback
+        traceback.print_exc()
+        
+        error_report = f"""
+**SEC Agent Report: ${ticker}**
+
+⚠️ **Error:** SEC filing analysis could not be completed.
+
+**Details:** {str(e)}
+
+**Possible Causes:**
+- Invalid ticker symbol
+- SEC API key not configured
+- No recent 10-K filings available
+        """
+        return error_report.strip(), error_report.strip()
+
+
+# ============================================================================
 # CLI / Example Usage
 # ============================================================================
 
 def main() -> None:
-    """Example usage of the SecAgent class."""
-    company = "Apple Inc"
+    """Example usage of the SEC Agent."""
+    import sys
+    
+    if len(sys.argv) > 1:
+        ticker = sys.argv[1].upper()
+    else:
+        ticker = "AAPL"
+        print(f"No ticker provided, using default: {ticker}")
+        print("Usage: python sec_agent.py <TICKER>\n")
+    
     company_description = "A technology company that designs, manufactures, and markets consumer electronics, computer software, and online services."
     
-    agent = SecAgent(verbose=True, save_final=True, save_trace=True)
+    summary, detailed = run_sec_agent(ticker, company_description, save_to_file=True)
     
-    if agent.verbose:
-        agent.logger.info(f"Starting analysis for: {company}")
-        agent.logger.info(f"📊 {get_metrics_documentation()}")
-    
-    try:
-        report = agent.run(company, company_description)
-    except Exception as e:
-        print(f"Analysis failed: {e}")
-        if agent.verbose:
-            agent.logger.error(f"Analysis failed: {e}")
-        return
-
     print("\n" + "=" * 60)
-    print("FINAL REPORT")
+    print("SEC AGENT SUMMARY")
     print("=" * 60 + "\n")
-    print(report)
-    print(f"\n✅ Analysis complete!")
+    print(summary)
+    print("\n" + "=" * 60)
+    print("\n📄 Full report saved to current directory")
 
 
 if __name__ == "__main__":

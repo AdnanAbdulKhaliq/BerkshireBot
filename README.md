@@ -9,9 +9,11 @@ AgentSeer is an autonomous analyst swarm that provides comprehensive, multi-pers
 ## 🎯 Project Overview
 
 ### The Problem
+
 Financial risk assessment is slow, manual, and biased by a single analyst's opinion. Traditional analysis lacks multiple perspectives and often misses critical signals across different data sources.
 
 ### The Solution
+
 An autonomous "Analyst Swarm" - a multi-agent system where specialist agents analyze a stock in parallel across different dimensions (fundamentals, news, sentiment, technicals, analyst ratings), then debate to produce a governed, multi-perspective risk report.
 
 ---
@@ -42,26 +44,31 @@ SEC Agent News   Social  Chart    Analyst
 ## 🤖 Specialist Agents
 
 ### 1. **SEC Agent** 📄
+
 - Navigates SEC EDGAR database
 - Analyzes 10-K "Risk Factors" sections
 - Extracts regulatory and compliance risks
 
 ### 2. **News Agent** 📰
+
 - Scrapes financial news sites
 - Summarizes breaking news and developments
 - Identifies market-moving events
 
 ### 3. **Social Sentiment Agent** 💬
+
 - Analyzes retail investor sentiment
 - Sources: Reddit (r/wallstreetbets, r/stocks), Twitter, StockTwits
 - Provides crowd psychology insights
 
 ### 4. **Chart Agent** 📊
+
 - Technical analysis of price action
 - Pattern recognition and momentum analysis
 - Price predictions and support/resistance levels
 
 ### 5. **Analyst Agent** 📈
+
 - Aggregates professional analyst ratings
 - Tracks upgrades, downgrades, price targets
 - Consensus recommendations
@@ -70,8 +77,10 @@ SEC Agent News   Social  Chart    Analyst
 
 ## 🎯 High-Level Agents
 
-### **Governor Agent** 
+### **Governor Agent**
+
 Synthesizes all specialist reports following Holistic AI principles:
+
 - ✅ Unbiased analysis - presents all perspectives fairly
 - ✅ Source attribution - cites which agent provided each insight
 - ✅ Conflict resolution - presents disagreements transparently
@@ -81,7 +90,9 @@ Synthesizes all specialist reports following Holistic AI principles:
 **Output**: Comprehensive investment memo
 
 ### **Risk Assessment Agent**
+
 Produces quantitative risk scoring across six dimensions:
+
 - 🏢 Market Risk
 - 🏭 Company-Specific Risk
 - 📱 Sentiment Risk
@@ -96,12 +107,14 @@ Produces quantitative risk scoring across six dimensions:
 ## 🚀 Installation
 
 ### Prerequisites
+
 ```bash
 python 3.9+
 pip install -r requirements.txt
 ```
 
 ### Required Dependencies
+
 ```bash
 # Core dependencies
 pip install langchain langchain-google-genai langchain-google-community
@@ -114,6 +127,7 @@ pip install flask flask-cors
 ```
 
 ### Environment Variables
+
 Create a `.env` file in the project root:
 
 ```env
@@ -138,30 +152,36 @@ FINNHUB_API_KEY=your_finnhub_api_key
 ## 📖 Usage
 
 ### 1. Single Analysis
+
 ```bash
 python run_agentseer.py TSLA
 ```
 
 ### 2. Batch Analysis
+
 ```bash
 python run_agentseer.py --batch TSLA AAPL MSFT GOOGL NVDA
 ```
 
 ### 3. View Analysis History
+
 ```bash
 python run_agentseer.py --list
 ```
 
 ### 4. Start API Server
+
 ```bash
 python run_agentseer.py --server
 ```
 
 Then access:
+
 - API: `http://localhost:8000`
 - Health check: `http://localhost:8000/api/health`
 
 ### 5. Use Individual Agents
+
 ```bash
 # Social Sentiment Agent
 python social_agent.py TSLA
@@ -181,6 +201,7 @@ python risk_assessment_agent.py GOOGL
 ## 📊 AgentSeer Dashboard
 
 The React-based dashboard provides a visual interface to:
+
 - ✅ Submit analysis requests
 - ✅ Monitor real-time progress through the agent pipeline
 - ✅ View analysis history
@@ -188,6 +209,7 @@ The React-based dashboard provides a visual interface to:
 - ✅ Access detailed reports
 
 ### Running the Dashboard
+
 ```bash
 # The dashboard is a standalone React component
 # Copy the code from agentseer_dashboard artifact
@@ -223,7 +245,9 @@ analyst-swarm/
 When running the API server:
 
 ### `POST /api/analyze`
+
 Analyze a stock ticker
+
 ```json
 {
   "ticker": "TSLA"
@@ -231,12 +255,15 @@ Analyze a stock ticker
 ```
 
 ### `GET /api/analyses`
+
 Get list of all analyses
 
 ### `GET /api/analysis/<ticker>`
+
 Get detailed analysis for specific ticker
 
 ### `GET /api/health`
+
 Health check endpoint
 
 ---
@@ -246,18 +273,22 @@ Health check endpoint
 Each analysis generates:
 
 ### 1. Specialist Agent Reports
+
 - `{ticker}_social_sentiment_{timestamp}.txt`
 - Individual agent summaries
 
 ### 2. Governor Investment Memo
+
 - `{ticker}_investment_memo_{timestamp}.md`
 - Comprehensive synthesis of all perspectives
 
 ### 3. Risk Assessment Report
+
 - `{ticker}_risk_assessment_{timestamp}.md`
 - Detailed risk scoring and portfolio implications
 
 ### 4. Workflow State
+
 - `{ticker}_workflow_state_{timestamp}.json`
 - Complete execution trace for debugging
 
@@ -266,24 +297,31 @@ Each analysis generates:
 ## 🎨 Key Features
 
 ### ✅ Parallel Execution
+
 Five specialist agents run simultaneously using LangGraph's parallel execution
 
 ### ✅ Holistic AI Principles
+
 Governor ensures unbiased, multi-perspective analysis
 
 ### ✅ Quantitative Risk Scoring
+
 0-100 risk scores across six key dimensions
 
 ### ✅ Source Attribution
+
 Every insight is traced back to its originating agent
 
 ### ✅ Conflict Resolution
+
 Disagreements between agents are presented transparently
 
 ### ✅ Portfolio Implications
+
 Actionable recommendations on position sizing and risk management
 
 ### ✅ Stress Testing
+
 What-if scenarios for different market conditions
 
 ---
@@ -293,11 +331,12 @@ What-if scenarios for different market conditions
 ### Adding a New Specialist Agent
 
 1. Create `{agent_name}_agent.py` following this template:
+
 ```python
 def run_{agent_name}_agent(ticker: str) -> str:
     """
     Execute the {Agent Name} analysis.
-    
+
     Returns:
         Formatted markdown report string
     """
@@ -306,6 +345,7 @@ def run_{agent_name}_agent(ticker: str) -> str:
 ```
 
 2. Add to `orchestrator.py`:
+
 ```python
 def {agent_name}_node(state: AnalystSwarmState) -> AnalystSwarmState:
     report = run_{agent_name}_agent(state['ticker'])
@@ -341,6 +381,7 @@ workflow.add_node("{agent_name}", {agent_name}_node)
 ## 🐛 Troubleshooting
 
 ### "Module not found" errors
+
 ```bash
 # Ensure all agents are in the same directory
 ls *.py
@@ -350,6 +391,7 @@ python -c "import sys; print(sys.path)"
 ```
 
 ### API rate limits
+
 ```bash
 # Social Agent uses caching - results refresh hourly
 # Finnhub free tier: 60 calls/minute
@@ -357,6 +399,7 @@ python -c "import sys; print(sys.path)"
 ```
 
 ### Missing environment variables
+
 ```bash
 # Validate your .env file
 python -c "from dotenv import load_dotenv; load_dotenv(); import os; print(os.environ.get('GEMINI_API_KEY'))"
@@ -387,6 +430,7 @@ MIT License - See LICENSE file for details
 ## 👥 Contributing
 
 Contributions welcome! Please:
+
 1. Fork the repository
 2. Create a feature branch
 3. Submit a pull request
@@ -396,6 +440,7 @@ Contributions welcome! Please:
 ## 🙏 Acknowledgments
 
 Built with:
+
 - **LangChain** - Agent framework
 - **LangGraph** - Workflow orchestration
 - **Google Gemini** - Language model

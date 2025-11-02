@@ -1,15 +1,32 @@
 #!/usr/bin/env python3
 """
-Example usage of the SecAgent class for financial analysis.
+Example usage of the sec_agent module for financial analysis.
 
-This demonstrates how to use the refactored SecAgent to analyze
+This demonstrates how to use the refactored SEC Agent to analyze
 SEC filings for any company.
 """
 
-from SecAgent import SecAgent
+from sec_agent import SecAgent, run_sec_agent
 
 
 def main():
+    """Example using the convenient wrapper function."""
+    ticker = "AAPL"
+    company_description = "A technology company that designs, manufactures, and markets consumer electronics, computer software, and online services."
+    
+    # Use the wrapper function (recommended - matches other agents)
+    summary, detailed = run_sec_agent(ticker, company_description, save_to_file=True)
+    
+    print("\n" + "="*60)
+    print("ANALYSIS COMPLETE!")
+    print("="*60)
+    print("\nSummary Report:")
+    print(summary)
+    print(f"\nDetailed report preview (first 500 chars):\n{detailed[:500]}...")
+
+
+def example_class_usage():
+    """Example using the SecAgent class directly."""
     company_name = "Apple Inc"
     company_description = "A technology company that designs, manufactures, and markets consumer electronics, computer software, and online services."
     
@@ -34,23 +51,19 @@ def example_quiet_mode():
     return report
 
 
-def example_custom_analysis():
-    """Example showing how to analyze multiple companies."""
-    companies = [
-        ("Apple Inc", "Consumer electronics and software"),
-        ("Microsoft Corporation", "Software, cloud computing, and hardware"),
-        ("Alphabet Inc", "Internet services and technology"),
-    ]
+def example_multiple_tickers():
+    """Example showing how to analyze multiple companies using the wrapper."""
+    tickers = ["AAPL", "MSFT", "GOOGL"]
     
     reports = {}
     
-    for company, description in companies:
+    for ticker in tickers:
         print(f"\n{'='*60}")
-        print(f"Analyzing {company}...")
+        print(f"Analyzing ${ticker}...")
         print(f"{'='*60}\n")
         
-        agent = SecAgent(verbose=True, save_final=True, save_trace=True)
-        reports[company] = agent.run(company, description)
+        summary, detailed = run_sec_agent(ticker, save_to_file=True)
+        reports[ticker] = {"summary": summary, "detailed": detailed}
     
     return reports
 

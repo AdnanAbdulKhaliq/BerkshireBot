@@ -46,26 +46,26 @@ load_dotenv()
 
 # --- ENVIRONMENT VALIDATION ---
 
+
 def validate_environment() -> None:
     """Validate all required API keys are set."""
-    required_vars = {
-        "GEMINI_API_KEY": "Gemini LLM for analysis"
-    }
-    
+    required_vars = {"GEMINI_API_KEY": "Gemini LLM for analysis"}
+
     missing = []
     for var_name, description in required_vars.items():
         if var_name not in os.environ:
             missing.append(f"  ❌ {var_name}: {description}")
-    
+
     if missing:
         error_msg = "Missing required environment variables:\n" + "\n".join(missing)
         raise EnvironmentError(error_msg)
-    
+
     # Optional API key
     if "FMP_API_KEY" not in os.environ:
         print("ℹ️ FMP_API_KEY not set - some features limited")
-    
+
     print("✅ Analyst_Agent: Environment variables validated")
+
 
 # Validate at module load time
 validate_environment()
@@ -73,20 +73,19 @@ validate_environment()
 # --- SETUP LLM ---
 
 llm = ChatGoogleGenerativeAI(
-    model="gemini-pro-latest",
-    temperature=0.1,
-    api_key=os.environ["GEMINI_API_KEY"]
+    model="gemini-pro-latest", temperature=0.1, api_key=os.environ["GEMINI_API_KEY"]
 )
 
 # --- DATA FETCHING FROM MULTIPLE SOURCES ---
+
 
 def convert_to_serializable(obj):
     """Convert pandas/numpy objects to JSON-serializable types."""
     import pandas as pd
     import numpy as np
-    
+
     if isinstance(obj, (pd.Timestamp, pd.DatetimeTZDtype)):
-        return obj.isoformat() if hasattr(obj, 'isoformat') else str(obj)
+        return obj.isoformat() if hasattr(obj, "isoformat") else str(obj)
     elif isinstance(obj, (np.integer, np.floating)):
         return float(obj)
     elif isinstance(obj, np.ndarray):
@@ -94,7 +93,7 @@ def convert_to_serializable(obj):
     elif isinstance(obj, pd.Series):
         return obj.to_dict()
     elif isinstance(obj, pd.DataFrame):
-        return obj.to_dict('records')
+        return obj.to_dict("records")
     elif pd.isna(obj):
         return None
     return obj
@@ -107,10 +106,10 @@ def fetch_yahoo_finance_data(ticker: str) -> Dict[str, Any]:
     """
     if yf is None:
         return {"error": "yfinance not installed"}
-    
+
     try:
         stock = yf.Ticker(ticker)
-        
+
         # Get recommendations (buy/hold/sell ratings over time)
         recent_recs = []
         try:
@@ -126,25 +125,31 @@ def fetch_yahoo_finance_data(ticker: str) -> Dict[str, Any]:
                     recent_recs.append(rec)
         except Exception as e:
             print(f"⚠️ Could not fetch recommendations: {e}")
-        
+
         # Get analyst price targets
         analyst_info = {}
         try:
             info = stock.info
             analyst_info = {
-                'targetHighPrice': convert_to_serializable(info.get('targetHighPrice')),
-                'targetLowPrice': convert_to_serializable(info.get('targetLowPrice')),
-                'targetMeanPrice': convert_to_serializable(info.get('targetMeanPrice')),
-                'targetMedianPrice': convert_to_serializable(info.get('targetMedianPrice')),
-                'recommendationMean': convert_to_serializable(info.get('recommendationMean')),
-                'recommendationKey': info.get('recommendationKey'),
-                'numberOfAnalystOpinions': convert_to_serializable(info.get('numberOfAnalystOpinions')),
-                'currentPrice': convert_to_serializable(info.get('currentPrice')),
-                'previousClose': convert_to_serializable(info.get('previousClose'))
+                "targetHighPrice": convert_to_serializable(info.get("targetHighPrice")),
+                "targetLowPrice": convert_to_serializable(info.get("targetLowPrice")),
+                "targetMeanPrice": convert_to_serializable(info.get("targetMeanPrice")),
+                "targetMedianPrice": convert_to_serializable(
+                    info.get("targetMedianPrice")
+                ),
+                "recommendationMean": convert_to_serializable(
+                    info.get("recommendationMean")
+                ),
+                "recommendationKey": info.get("recommendationKey"),
+                "numberOfAnalystOpinions": convert_to_serializable(
+                    info.get("numberOfAnalystOpinions")
+                ),
+                "currentPrice": convert_to_serializable(info.get("currentPrice")),
+                "previousClose": convert_to_serializable(info.get("previousClose")),
             }
         except Exception as e:
             print(f"⚠️ Could not fetch analyst info: {e}")
-        
+
         # Get upgrades/downgrades
         upgrades_list = []
         try:
@@ -153,39 +158,53 @@ def fetch_yahoo_finance_data(ticker: str) -> Dict[str, Any]:
                 # Get last 30 days
                 thirty_days_ago = datetime.now() - timedelta(days=30)
                 recent_upgrades = upgrades[upgrades.index >= thirty_days_ago]
-                
+
                 # Convert to list of dicts with serializable date strings
                 # Apply stricter recency filters
                 for date_idx, row in recent_upgrades.iterrows():
-                    upgrade_date = date_idx if hasattr(date_idx, 'date') else datetime.strptime(str(date_idx)[:10], '%Y-%m-%d')
+                    upgrade_date = (
+                        date_idx
+                        if hasattr(date_idx, "date")
+                        else datetime.strptime(str(date_idx)[:10], "%Y-%m-%d")
+                    )
                     days_ago = (datetime.now() - upgrade_date).days
-                    
+
                     # Only include if within last 30 days, but prioritize last 7 days
                     if days_ago <= 30:
                         upgrade_entry = {
-                            'date': date_idx.strftime('%Y-%m-%d') if hasattr(date_idx, 'strftime') else str(date_idx),
-                            'days_ago': days_ago,  # Track recency
-                            'firm': convert_to_serializable(row.get('Firm', 'Unknown')),
-                            'toGrade': convert_to_serializable(row.get('ToGrade', 'N/A')),
-                            'fromGrade': convert_to_serializable(row.get('FromGrade', 'N/A')),
-                            'action': convert_to_serializable(row.get('Action', 'N/A')),
-                            'recency_weight': 1.0 if days_ago <= 7 else 0.5  # Higher weight for last 7 days
+                            "date": (
+                                date_idx.strftime("%Y-%m-%d")
+                                if hasattr(date_idx, "strftime")
+                                else str(date_idx)
+                            ),
+                            "days_ago": days_ago,  # Track recency
+                            "firm": convert_to_serializable(row.get("Firm", "Unknown")),
+                            "toGrade": convert_to_serializable(
+                                row.get("ToGrade", "N/A")
+                            ),
+                            "fromGrade": convert_to_serializable(
+                                row.get("FromGrade", "N/A")
+                            ),
+                            "action": convert_to_serializable(row.get("Action", "N/A")),
+                            "recency_weight": (
+                                1.0 if days_ago <= 7 else 0.5
+                            ),  # Higher weight for last 7 days
                         }
                         upgrades_list.append(upgrade_entry)
         except Exception as e:
             print(f"⚠️ Could not fetch upgrades/downgrades: {e}")
-        
+
         return {
-            'source': 'Yahoo Finance',
-            'recent_recommendations': recent_recs,
-            'analyst_info': analyst_info,
-            'upgrades_downgrades': upgrades_list,
-            'timestamp': datetime.now().isoformat()
+            "source": "Yahoo Finance",
+            "recent_recommendations": recent_recs,
+            "analyst_info": analyst_info,
+            "upgrades_downgrades": upgrades_list,
+            "timestamp": datetime.now().isoformat(),
         }
-        
+
     except Exception as e:
         print(f"❌ Yahoo Finance error: {e}")
-        return {'error': f'Yahoo Finance error: {str(e)}'}
+        return {"error": f"Yahoo Finance error: {str(e)}"}
 
 
 def fetch_fmp_data(ticker: str) -> Dict[str, Any]:
@@ -194,23 +213,23 @@ def fetch_fmp_data(ticker: str) -> Dict[str, Any]:
     Provides analyst estimates, upgrades/downgrades, and price targets.
     """
     if requests is None or "FMP_API_KEY" not in os.environ:
-        return {'error': 'FMP API not available'}
-    
+        return {"error": "FMP API not available"}
+
     api_key = os.environ.get("FMP_API_KEY")
     base_url = "https://financialmodelingprep.com/api/v3"
-    
+
     try:
         results = {}
-        
+
         # 1. Get analyst estimates
         try:
             url = f"{base_url}/analyst-estimates/{ticker}?apikey={api_key}"
             response = requests.get(url, timeout=10)
             if response.status_code == 200:
-                results['analyst_estimates'] = response.json()
+                results["analyst_estimates"] = response.json()
         except:
             pass
-        
+
         # 2. Get upgrades/downgrades
         try:
             url = f"{base_url}/upgrades-downgrades?symbol={ticker}&apikey={api_key}"
@@ -220,27 +239,31 @@ def fetch_fmp_data(ticker: str) -> Dict[str, Any]:
                 # Get only recent ones (last 30 days)
                 thirty_days_ago = datetime.now() - timedelta(days=30)
                 recent = [
-                    item for item in data 
-                    if datetime.strptime(item.get('publishedDate', '2000-01-01'), '%Y-%m-%d %H:%M:%S') >= thirty_days_ago
+                    item
+                    for item in data
+                    if datetime.strptime(
+                        item.get("publishedDate", "2000-01-01"), "%Y-%m-%d %H:%M:%S"
+                    )
+                    >= thirty_days_ago
                 ]
-                results['upgrades_downgrades'] = recent[:10]  # Limit to 10 most recent
+                results["upgrades_downgrades"] = recent[:10]  # Limit to 10 most recent
         except:
             pass
-        
+
         # 3. Get price target consensus
         try:
             url = f"{base_url}/price-target-consensus?symbol={ticker}&apikey={api_key}"
             response = requests.get(url, timeout=10)
             if response.status_code == 200:
-                results['price_target_consensus'] = response.json()
+                results["price_target_consensus"] = response.json()
         except:
             pass
-        
-        results['source'] = 'Financial Modeling Prep'
+
+        results["source"] = "Financial Modeling Prep"
         return results
-        
+
     except Exception as e:
-        return {'error': f'FMP API error: {str(e)}'}
+        return {"error": f"FMP API error: {str(e)}"}
 
 
 def fetch_marketwatch_data(ticker: str) -> Dict[str, Any]:
@@ -249,30 +272,26 @@ def fetch_marketwatch_data(ticker: str) -> Dict[str, Any]:
     Provides additional analyst ratings and estimates.
     """
     if requests is None:
-        return {'error': 'requests not available'}
-    
+        return {"error": "requests not available"}
+
     try:
         # MarketWatch analyst ratings page
         url = f"https://www.marketwatch.com/investing/stock/{ticker.lower()}/analystestimates"
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         }
-        
+
         response = requests.get(url, headers=headers, timeout=10)
-        
+
         if response.status_code == 200:
             # Basic parsing - in production, you'd use BeautifulSoup
             # For now, just mark as available
-            return {
-                'source': 'MarketWatch',
-                'status': 'available',
-                'url': url
-            }
+            return {"source": "MarketWatch", "status": "available", "url": url}
         else:
-            return {'error': f'MarketWatch returned status {response.status_code}'}
-            
+            return {"error": f"MarketWatch returned status {response.status_code}"}
+
     except Exception as e:
-        return {'error': f'MarketWatch error: {str(e)}'}
+        return {"error": f"MarketWatch error: {str(e)}"}
 
 
 @lru_cache(maxsize=100)
@@ -281,30 +300,31 @@ def cached_analyst_fetch(ticker: str, timestamp_hour: int) -> Dict[str, Any]:
     Cached fetch from all sources. Cache expires every hour.
     """
     print(f"🔍 Analyst_Agent: Fetching analyst data for {ticker}...")
-    
+
     # Fetch from Yahoo Finance (primary source - free and reliable)
     yahoo_data = fetch_yahoo_finance_data(ticker)
-    
+
     # Fetch from FMP (secondary source - optional)
     fmp_data = fetch_fmp_data(ticker)
-    
+
     # Fetch from MarketWatch (tertiary source - optional)
     mw_data = fetch_marketwatch_data(ticker)
-    
+
     return {
-        'ticker': ticker,
-        'yahoo_finance': yahoo_data,
-        'fmp': fmp_data,
-        'marketwatch': mw_data,
-        'fetch_timestamp': datetime.now().isoformat()
+        "ticker": ticker,
+        "yahoo_finance": yahoo_data,
+        "fmp": fmp_data,
+        "marketwatch": mw_data,
+        "fetch_timestamp": datetime.now().isoformat(),
     }
 
 
 def safe_json_dumps(obj):
     """Safely convert objects to JSON string with custom serialization."""
+
     def json_serializer(o):
         if pd and isinstance(o, (pd.Timestamp, pd.DatetimeTZDtype)):
-            return o.isoformat() if hasattr(o, 'isoformat') else str(o)
+            return o.isoformat() if hasattr(o, "isoformat") else str(o)
         elif np and isinstance(o, (np.integer, np.floating)):
             return float(o)
         elif np and isinstance(o, np.ndarray):
@@ -312,11 +332,11 @@ def safe_json_dumps(obj):
         elif pd and isinstance(o, pd.Series):
             return o.to_dict()
         elif pd and isinstance(o, pd.DataFrame):
-            return o.to_dict('records')
+            return o.to_dict("records")
         elif pd and pd.isna(o):
             return None
         return str(o)
-    
+
     return json.dumps(obj, default=json_serializer, indent=2)
 
 
@@ -325,29 +345,27 @@ def run_analyst_search(input_dict: Dict[str, Any]) -> Dict[str, Any]:
     Execute analyst data search with caching and error handling.
     """
     ticker = input_dict.get("ticker", "").upper()
-    
+
     if not ticker:
         return {"raw_data_json": "Error: No ticker provided", "ticker": ""}
-    
+
     try:
         # Cache key changes every hour
         cache_key = int(time.time() // 3600)
         results = cached_analyst_fetch(ticker, cache_key)
-        
+
         print(f"✅ Analyst_Agent: Retrieved analyst data for {ticker}")
-        
-        return {
-            "raw_data_json": safe_json_dumps(results),
-            "ticker": ticker
-        }
-        
+
+        return {"raw_data_json": safe_json_dumps(results), "ticker": ticker}
+
     except Exception as e:
         print(f"❌ Analyst_Agent: Search failed - {e}")
         import traceback
+
         traceback.print_exc()
         return {
             "raw_data_json": f"Error retrieving analyst data: {str(e)}",
-            "ticker": ticker
+            "ticker": ticker,
         }
 
 
@@ -470,47 +488,48 @@ Return ONLY the JSON object, no additional text or markdown."""
 
 # --- REPORT GENERATION ---
 
+
 def generate_detailed_report(ticker: str, analysis: Dict[str, Any]) -> str:
     """
     Generate a comprehensive markdown report from analysis results.
-    
+
     Args:
         ticker: Stock ticker symbol
         analysis: Detailed analysis JSON from LLM
-    
+
     Returns:
         Formatted markdown report string
     """
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    consensus = analysis.get('consensus', 'N/A')
-    consensus_score = analysis.get('consensus_score', 0.0)
-    recency_score = analysis.get('recency_adjusted_score', consensus_score)
-    momentum = analysis.get('recent_momentum', 'Neutral')
-    momentum_score = analysis.get('momentum_score', 0.0)
-    avg_target = analysis.get('average_target', 0.0)
-    target_high = analysis.get('target_high', 0.0)
-    target_low = analysis.get('target_low', 0.0)
-    current_price = analysis.get('current_price', 0.0)
-    upside = analysis.get('upside_percent', 0.0)
-    num_analysts = analysis.get('number_of_analysts', 0)
-    
+
+    consensus = analysis.get("consensus", "N/A")
+    consensus_score = analysis.get("consensus_score", 0.0)
+    recency_score = analysis.get("recency_adjusted_score", consensus_score)
+    momentum = analysis.get("recent_momentum", "Neutral")
+    momentum_score = analysis.get("momentum_score", 0.0)
+    avg_target = analysis.get("average_target", 0.0)
+    target_high = analysis.get("target_high", 0.0)
+    target_low = analysis.get("target_low", 0.0)
+    current_price = analysis.get("current_price", 0.0)
+    upside = analysis.get("upside_percent", 0.0)
+    num_analysts = analysis.get("number_of_analysts", 0)
+
     # Consensus emoji with new -2 to +2 scale
     def get_rating_emoji(score):
         if score >= 1.5:
-            return '🟢🟢'
+            return "🟢🟢"
         elif score >= 0.5:
-            return '🟢'
+            return "🟢"
         elif score >= -0.5:
-            return '🟡'
+            return "🟡"
         elif score >= -1.5:
-            return '🔴'
+            return "🔴"
         else:
-            return '🔴🔴'
-    
+            return "🔴🔴"
+
     consensus_emoji = get_rating_emoji(consensus_score)
     momentum_emoji = get_rating_emoji(momentum_score)
-    
+
     report = f"""
 # Professional Analyst Report: ${ticker}
 **Generated:** {timestamp}
@@ -545,10 +564,12 @@ def generate_detailed_report(ticker: str, analysis: Dict[str, Any]) -> str:
 
 ### Consensus Interpretation
 """
-    
-    detailed = analysis.get('detailed_analysis', {})
-    report += f"{detailed.get('consensus_breakdown', 'No detailed breakdown available.')}\n\n"
-    
+
+    detailed = analysis.get("detailed_analysis", {})
+    report += (
+        f"{detailed.get('consensus_breakdown', 'No detailed breakdown available.')}\n\n"
+    )
+
     report += f"""
 ---
 
@@ -561,36 +582,36 @@ def generate_detailed_report(ticker: str, analysis: Dict[str, Any]) -> str:
 
 ### Price Target Breakdown
 """
-    
+
     report += f"{detailed.get('price_target_analysis', 'No detailed price target analysis available.')}\n\n"
-    
+
     # Recent Activity with recency tiers
     report += "---\n\n## Recent Analyst Activity (Prioritized by Recency)\n\n"
-    
-    activity = analysis.get('recent_activity', [])
+
+    activity = analysis.get("recent_activity", [])
     if activity:
         # Group by recency tier
-        last_7_days = [a for a in activity if a.get('days_ago', 999) <= 7]
-        days_8_14 = [a for a in activity if 7 < a.get('days_ago', 999) <= 14]
-        days_15_30 = [a for a in activity if 14 < a.get('days_ago', 999) <= 30]
-        
+        last_7_days = [a for a in activity if a.get("days_ago", 999) <= 7]
+        days_8_14 = [a for a in activity if 7 < a.get("days_ago", 999) <= 14]
+        days_15_30 = [a for a in activity if 14 < a.get("days_ago", 999) <= 30]
+
         if last_7_days:
             report += "### 🔥 LAST 7 DAYS (Highest Priority)\n\n"
-            for item in sorted(last_7_days, key=lambda x: x.get('days_ago', 0)):
+            for item in sorted(last_7_days, key=lambda x: x.get("days_ago", 0)):
                 report += format_activity_item(item)
-        
+
         if days_8_14:
             report += "### 📊 8-14 DAYS AGO (High Priority)\n\n"
-            for item in sorted(days_8_14, key=lambda x: x.get('days_ago', 0)):
+            for item in sorted(days_8_14, key=lambda x: x.get("days_ago", 0)):
                 report += format_activity_item(item)
-        
+
         if days_15_30:
             report += "### 📅 15-30 DAYS AGO (Moderate Priority)\n\n"
-            for item in sorted(days_15_30, key=lambda x: x.get('days_ago', 0)):
+            for item in sorted(days_15_30, key=lambda x: x.get("days_ago", 0)):
                 report += format_activity_item(item)
     else:
         report += "*No recent analyst actions found in the last 30 days.*\n\n"
-    
+
     report += f"""
 ### 🎯 Recent Trends Analysis (CRITICAL)
 {detailed.get('recent_trends', 'No trend analysis available.')}
@@ -606,23 +627,23 @@ def generate_detailed_report(ticker: str, analysis: Dict[str, Any]) -> str:
 ## Key Catalysts (Bull Case)
 
 """
-    
-    catalysts = detailed.get('key_catalysts', [])
+
+    catalysts = detailed.get("key_catalysts", [])
     if catalysts:
         for catalyst in catalysts:
             report += f"- {catalyst}\n"
     else:
         report += "*No specific catalysts identified.*\n"
-    
+
     report += "\n---\n\n## Key Risks (Bear Case)\n\n"
-    
-    risks = detailed.get('key_risks', [])
+
+    risks = detailed.get("key_risks", [])
     if risks:
         for risk in risks:
             report += f"- {risk}\n"
     else:
         report += "*No specific risks identified.*\n"
-    
+
     report += f"""
 
 ---
@@ -645,7 +666,7 @@ def generate_detailed_report(ticker: str, analysis: Dict[str, Any]) -> str:
 Based on analyst coverage, investors should monitor:
 
 """
-    
+
     if risks:
         for i, risk in enumerate(risks, 1):
             report += f"{i}. {risk}\n"
@@ -653,7 +674,7 @@ Based on analyst coverage, investors should monitor:
         report += "- Market conditions and sector performance\n"
         report += "- Company earnings and guidance\n"
         report += "- Competitive landscape changes\n"
-    
+
     report += f"""
 
 ---
@@ -703,70 +724,70 @@ Always conduct your own due diligence and consult with a qualified financial adv
 *Timestamp: {timestamp}*  
 *Ticker: ${ticker}*
 """
-    
+
     return report.strip()
 
 
 def format_activity_item(item: Dict[str, Any]) -> str:
     """Format a single analyst activity item."""
-    action = item.get('action', 'N/A').lower()
+    action = item.get("action", "N/A").lower()
     action_emoji = {
-        'upgrade': '⬆️',
-        'downgrade': '⬇️',
-        'initiated': '🆕',
-        'reiterated': '↔️',
-        'main': '➡️'
-    }.get(action, '•')
-    
-    impact = item.get('impact', 'neutral')
+        "upgrade": "⬆️",
+        "downgrade": "⬇️",
+        "initiated": "🆕",
+        "reiterated": "↔️",
+        "main": "➡️",
+    }.get(action, "•")
+
+    impact = item.get("impact", "neutral")
     impact_emoji = {
-        'very_positive': '🟢🟢',
-        'positive': '🟢',
-        'neutral': '⚪',
-        'negative': '🔴',
-        'very_negative': '🔴🔴'
-    }.get(impact, '⚪')
-    
-    date_str = item.get('date', 'Recent')
-    days_ago = item.get('days_ago', '?')
-    firm = item.get('firm', 'Unknown Firm')
-    action_text = item.get('action', 'N/A').capitalize()
-    from_grade = item.get('from_grade', 'N/A')
-    to_grade = item.get('to_grade', 'N/A')
-    
+        "very_positive": "🟢🟢",
+        "positive": "🟢",
+        "neutral": "⚪",
+        "negative": "🔴",
+        "very_negative": "🔴🔴",
+    }.get(impact, "⚪")
+
+    date_str = item.get("date", "Recent")
+    days_ago = item.get("days_ago", "?")
+    firm = item.get("firm", "Unknown Firm")
+    action_text = item.get("action", "N/A").capitalize()
+    from_grade = item.get("from_grade", "N/A")
+    to_grade = item.get("to_grade", "N/A")
+
     result = f"#### {action_emoji} {firm} - {date_str} ({days_ago} days ago) {impact_emoji}\n"
     result += f"**Action:** {action_text}\n"
-    if from_grade != 'N/A' and to_grade != 'N/A':
+    if from_grade != "N/A" and to_grade != "N/A":
         result += f"**Change:** {from_grade} → {to_grade}\n"
     result += "\n"
-    
+
     return result
 
 
 def save_report(ticker: str, report: str, output_dir: str = "reports") -> str:
     """
     Save the detailed report to a text file.
-    
+
     Args:
         ticker: Stock ticker symbol
         report: Formatted report content
         output_dir: Directory to save reports (created if doesn't exist)
-    
+
     Returns:
         Path to saved file
     """
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
-    
+
     # Generate filename with timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"{ticker}_analyst_report_{timestamp}.txt"
     filepath = os.path.join(output_dir, filename)
-    
+
     # Write report to file
-    with open(filepath, 'w', encoding='utf-8') as f:
+    with open(filepath, "w", encoding="utf-8") as f:
         f.write(report)
-    
+
     print(f"📄 Detailed report saved to: {filepath}")
     return filepath
 
@@ -777,7 +798,7 @@ agent_chain = (
     RunnablePassthrough.assign(api_results=run_analyst_search)
     | RunnablePassthrough.assign(
         ticker=lambda x: x["api_results"]["ticker"],
-        raw_data_json=lambda x: x["api_results"]["raw_data_json"]
+        raw_data_json=lambda x: x["api_results"]["raw_data_json"],
     )
     | prompt_template
     | llm
@@ -787,65 +808,66 @@ agent_chain = (
 
 # --- MAIN AGENT FUNCTION ---
 
+
 def run_analyst_agent(ticker: str, save_to_file: bool = True) -> tuple[str, str]:
     """
     Execute the enhanced Analyst Agent analysis.
-    
+
     Args:
         ticker: Stock ticker symbol (e.g., "AAPL", "TSLA")
         save_to_file: Whether to save the detailed report to a file
-    
+
     Returns:
         Tuple of (summary_report, detailed_report)
     """
     print(f"\n{'='*60}")
     print(f"🤖 Analyst Agent: Analyzing analyst ratings for ${ticker}")
     print(f"{'='*60}\n")
-    
+
     try:
         # Execute the analysis chain
         analysis_json = agent_chain.invoke({"ticker": ticker.upper()})
-        
+
         # Generate detailed report first
         detailed_report = generate_detailed_report(ticker, analysis_json)
-        
+
         # Save to file if requested
         if save_to_file:
             save_report(ticker, detailed_report)
-        
+
         # Extract data for summary
-        consensus = analysis_json.get('consensus', 'N/A')
-        consensus_score = analysis_json.get('consensus_score', 0.0)
-        recency_score = analysis_json.get('recency_adjusted_score', consensus_score)
-        momentum = analysis_json.get('recent_momentum', 'Neutral')
-        momentum_score = analysis_json.get('momentum_score', 0.0)
-        avg_target = analysis_json.get('average_target', 0.0)
-        target_high = analysis_json.get('target_high', 0.0)
-        target_low = analysis_json.get('target_low', 0.0)
-        current_price = analysis_json.get('current_price', 0.0)
-        upside = analysis_json.get('upside_percent', 0.0)
-        num_analysts = analysis_json.get('number_of_analysts', 0)
-        activity = analysis_json.get('recent_activity', [])
-        summary = analysis_json.get('analysis_summary', 'No summary provided.')
-        data_quality = analysis_json.get('data_quality', 'unknown')
-        sources = analysis_json.get('data_sources_used', [])
-        
+        consensus = analysis_json.get("consensus", "N/A")
+        consensus_score = analysis_json.get("consensus_score", 0.0)
+        recency_score = analysis_json.get("recency_adjusted_score", consensus_score)
+        momentum = analysis_json.get("recent_momentum", "Neutral")
+        momentum_score = analysis_json.get("momentum_score", 0.0)
+        avg_target = analysis_json.get("average_target", 0.0)
+        target_high = analysis_json.get("target_high", 0.0)
+        target_low = analysis_json.get("target_low", 0.0)
+        current_price = analysis_json.get("current_price", 0.0)
+        upside = analysis_json.get("upside_percent", 0.0)
+        num_analysts = analysis_json.get("number_of_analysts", 0)
+        activity = analysis_json.get("recent_activity", [])
+        summary = analysis_json.get("analysis_summary", "No summary provided.")
+        data_quality = analysis_json.get("data_quality", "unknown")
+        sources = analysis_json.get("data_sources_used", [])
+
         # Determine emoji with new scale
         def get_rating_emoji(score):
             if score >= 1.5:
-                return '🟢🟢'
+                return "🟢🟢"
             elif score >= 0.5:
-                return '🟢'
+                return "🟢"
             elif score >= -0.5:
-                return '🟡'
+                return "🟡"
             elif score >= -1.5:
-                return '🔴'
+                return "🔴"
             else:
-                return '🔴🔴'
-        
+                return "🔴🔴"
+
         consensus_emoji = get_rating_emoji(consensus_score)
         momentum_emoji = get_rating_emoji(momentum_score)
-        
+
         # Format the summary report (for console output)
         summary_report = f"""
 **Analyst Agent Report: ${ticker}**
@@ -862,46 +884,48 @@ def run_analyst_agent(ticker: str, save_to_file: bool = True) -> tuple[str, str]
 
 📈 **Recent Analyst Activity (Prioritized by Recency):**
 """
-        
+
         if not activity:
             summary_report += "* *No recent upgrades or downgrades found.*\n"
         else:
             # Show most recent 3, grouped by recency
-            last_7_days = [a for a in activity if a.get('days_ago', 999) <= 7]
-            days_8_14 = [a for a in activity if 7 < a.get('days_ago', 999) <= 14]
-            
+            last_7_days = [a for a in activity if a.get("days_ago", 999) <= 7]
+            days_8_14 = [a for a in activity if 7 < a.get("days_ago", 999) <= 14]
+
             shown = 0
             if last_7_days:
                 summary_report += "\n🔥 **LAST 7 DAYS (High Priority):**\n"
-                for item in sorted(last_7_days, key=lambda x: x.get('days_ago', 0))[:2]:
+                for item in sorted(last_7_days, key=lambda x: x.get("days_ago", 0))[:2]:
                     action_emoji = {
-                        'upgrade': '⬆️',
-                        'downgrade': '⬇️',
-                        'initiated': '🆕',
-                        'reiterated': '↔️'
-                    }.get(item.get('action', '').lower(), '•')
-                    
+                        "upgrade": "⬆️",
+                        "downgrade": "⬇️",
+                        "initiated": "🆕",
+                        "reiterated": "↔️",
+                    }.get(item.get("action", "").lower(), "•")
+
                     summary_report += f"  {action_emoji} **{item.get('firm', 'Unknown')}** ({item.get('days_ago', '?')} days ago)"
-                    if item.get('from_grade') and item.get('to_grade'):
+                    if item.get("from_grade") and item.get("to_grade"):
                         summary_report += f": {item['from_grade']} → {item['to_grade']}"
                     summary_report += "\n"
                     shown += 1
-            
+
             if shown < 3 and days_8_14:
                 summary_report += "\n📊 **8-14 DAYS AGO:**\n"
-                for item in sorted(days_8_14, key=lambda x: x.get('days_ago', 0))[:3-shown]:
+                for item in sorted(days_8_14, key=lambda x: x.get("days_ago", 0))[
+                    : 3 - shown
+                ]:
                     action_emoji = {
-                        'upgrade': '⬆️',
-                        'downgrade': '⬇️',
-                        'initiated': '🆕',
-                        'reiterated': '↔️'
-                    }.get(item.get('action', '').lower(), '•')
-                    
+                        "upgrade": "⬆️",
+                        "downgrade": "⬇️",
+                        "initiated": "🆕",
+                        "reiterated": "↔️",
+                    }.get(item.get("action", "").lower(), "•")
+
                     summary_report += f"  {action_emoji} **{item.get('firm', 'Unknown')}** ({item.get('days_ago', '?')} days ago)"
-                    if item.get('from_grade') and item.get('to_grade'):
+                    if item.get("from_grade") and item.get("to_grade"):
                         summary_report += f": {item['from_grade']} → {item['to_grade']}"
                     summary_report += "\n"
-        
+
         summary_report += f"""
 
 📝 **Analysis Summary:**
@@ -918,15 +942,16 @@ def run_analyst_agent(ticker: str, save_to_file: bool = True) -> tuple[str, str]
 *Full detailed report with recency weighting saved to file*
 *Agent: Analyst Agent (Enhanced) | Model: Gemini Pro*
         """
-        
+
         print("✅ Analyst_Agent: Analysis complete")
         return summary_report.strip(), detailed_report
-        
+
     except Exception as e:
         print(f"❌ Analyst_Agent: Chain execution failed - {e}")
         import traceback
+
         traceback.print_exc()
-        
+
         error_report = f"""
 **Analyst Agent Report: ${ticker}**
 
@@ -946,27 +971,27 @@ def run_analyst_agent(ticker: str, save_to_file: bool = True) -> tuple[str, str]
 
 if __name__ == "__main__":
     import sys
-    
+
     # Check dependencies
     if yf is None:
         print("\n❌ Missing required package: yfinance")
         print("Install with: pip install yfinance\n")
         sys.exit(1)
-    
+
     if len(sys.argv) > 1:
         ticker = sys.argv[1].upper()
     else:
         ticker = "AAPL"  # Default example
         print(f"No ticker provided, using default: {ticker}")
         print("Usage: python analyst_agent.py <TICKER>\n")
-    
+
     # Run the agent
     summary, detailed = run_analyst_agent(ticker, save_to_file=True)
-    
+
     # Display summary
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("SUMMARY OUTPUT (Console)")
-    print("="*60 + "\n")
+    print("=" * 60 + "\n")
     print(summary)
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("\n📄 Full detailed report saved to 'reports/' directory")

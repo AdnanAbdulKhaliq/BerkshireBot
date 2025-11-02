@@ -185,21 +185,19 @@ def with_retry(
 
 @with_retry("SEC Agent")
 def sec_agent_node(state: AnalystSwarmState) -> AnalystSwarmState:
-    """Run the SEC Agent (placeholder)."""
+    """Run the SEC Agent."""
     print(f"\n🔍 Running SEC Agent for ${state['ticker']}...")
     
     try:
-        # TODO: Implement SEC agent
-        report = f"""
-**SEC Agent Report: ${state['ticker']}**
-
-📄 **10-K Risk Factors Summary:**
-* Regulatory compliance risks
-* Market competition
-* Operational challenges
-
-*Note: Full SEC agent implementation pending*
-        """
+        from sec_agent import run_sec_agent
+        
+        summary, detailed = run_sec_agent(
+            state['ticker'],
+            save_to_file=True
+        )
+        
+        # Use the summary for the report
+        report = summary
         
         state['sec_agent_report'] = report
         state['sec_agent_status'] = 'success'
@@ -218,19 +216,37 @@ def sec_agent_node(state: AnalystSwarmState) -> AnalystSwarmState:
 
 @with_retry("News Agent")
 def news_agent_node(state: AnalystSwarmState) -> AnalystSwarmState:
-    """Run the News Agent (placeholder)."""
+    """Run the News Agent."""
     print(f"\n📰 Running News Agent for ${state['ticker']}...")
     
     try:
+        from news_agent import analyze_company_sentiment
+        
+        # Get company name from ticker (you might want to add a mapping)
+        company_name = state['ticker']
+        
+        result = analyze_company_sentiment(
+            company_name=company_name,
+            max_articles=30,
+            lookback_days=7,
+            verbose=True
+        )
+        
+        if 'error' in result:
+            raise Exception(result['error'])
+        
+        # Format a summary from the result
         report = f"""
 **News Agent Report: ${state['ticker']}**
 
-📰 **Recent News Summary:**
-* Industry developments
-* Company announcements
-* Market reactions
+📰 **Sentiment Analysis:**
+* Overall Score: {result['weighted_sentiment_score']:.2f}
+* Bullish Pressure: {result['bullish_pressure']*100:.1f}%
+* Bearish Pressure: {result['bearish_pressure']*100:.1f}%
+* Articles Analyzed: {result['total_articles_analyzed']}
+* High-Impact Articles: {result['high_impact_count']}
 
-*Note: Full News agent implementation pending*
+{result['dashboard_summary']}
         """
         
         state['news_agent_report'] = report
