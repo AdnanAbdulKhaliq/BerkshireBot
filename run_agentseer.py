@@ -3,19 +3,6 @@ AgentSeer - Complete Integration Script
 
 This script provides a unified interface to run the entire Analyst Swarm system.
 It includes CLI, web API, and batch processing capabilities.
-
-Usage:
-    # Single analysis
-    python run_agentseer.py TSLA
-    
-    # Batch analysis
-    python run_agentseer.py --batch TSLA AAPL MSFT GOOGL
-    
-    # Start web API server
-    python run_agentseer.py --server
-    
-    # View existing analyses
-    python run_agentseer.py --list
 """
 
 import os
@@ -24,15 +11,26 @@ import json
 import argparse
 from datetime import datetime
 from pathlib import Path
+from typing import Dict, Any
 
-# Import the orchestrator
+# Import the orchestrator and *all its components*
 try:
-    from orchestrator import run_analyst_swarm
-except ImportError:
-    print("❌ Error: Could not import orchestrator.py")
-    print("Make sure orchestrator.py is in the same directory")
+    from orchestrator import (
+        run_analyst_swarm,
+        save_workflow_state,
+        AnalystSwarmState,
+        sec_agent_node,
+        news_agent_node,
+        social_agent_node,
+        chart_agent_node,
+        analyst_agent_node,
+        governor_agent_node,
+        risk_assessment_node
+    )
+except ImportError as e:
+    print(f"❌ Error: Could not import from orchestrator.py: {e}")
+    print("Make sure orchestrator.py is in the same directory and has all dependencies.")
     sys.exit(1)
-
 
 # --- UTILITIES ---
 
@@ -47,14 +45,15 @@ def save_analysis_summary(ticker: str, state: dict):
     """Save a summary of the analysis to a central index file."""
     index_file = "workflow_states/analysis_index.json"
     
-    # Load existing index
     if os.path.exists(index_file):
-        with open(index_file, 'r') as f:
-            index = json.load(f)
+        try:
+            with open(index_file, 'r') as f:
+                index = json.load(f)
+        except json.JSONDecodeError:
+            index = {"analyses": []}
     else:
         index = {"analyses": []}
     
-    # Create summary entry
     summary = {
         "ticker": ticker,
         "timestamp": state.get('timestamp'),
@@ -73,16 +72,31 @@ def save_analysis_summary(ticker: str, state: dict):
         "errors": state.get('errors', [])
     }
     
-    # Add to index
+    # Add to index, prevent duplicates
+    index["analyses"] = [s for s in index["analyses"] if s['ticker'] != ticker or s['timestamp'] != summary['timestamp']]
     index["analyses"].insert(0, summary)
-    
-    # Keep only last 100 analyses
     index["analyses"] = index["analyses"][:100]
     
-    # Save index
     with open(index_file, 'w') as f:
         json.dump(index, f, indent=2)
 
+
+def load_latest_state(ticker: str) -> AnalystSwarmState | None:
+    """Find and load the most recent workflow state file for a ticker."""
+    state_dir = Path('workflow_states')
+    state_files = list(state_dir.glob(f"{ticker.upper()}_workflow_state_*.json"))
+    
+    if not state_files:
+        return None
+    
+    try:
+        latest_file = max(state_files, key=lambda p: p.stat().st_mtime)
+        with open(latest_file, 'r') as f:
+            state = json.load(f)
+        return state
+    except Exception as e:
+        print(f"❌ Error loading state for {ticker}: {e}")
+        return None
 
 # --- SINGLE ANALYSIS ---
 
@@ -95,13 +109,9 @@ def run_single_analysis(ticker: str):
     setup_directories()
     
     try:
-        # Run the workflow
         final_state = run_analyst_swarm(ticker, save_state=True)
-        
-        # Save to index
         save_analysis_summary(ticker, final_state)
         
-        # Print results
         print("\n" + "="*70)
         print("📊 ANALYSIS COMPLETE")
         print("="*70)
@@ -153,7 +163,6 @@ def run_batch_analysis(tickers: list):
             results.append((ticker, 'failed', str(e)))
             failed += 1
     
-    # Print summary
     print("\n" + "="*70)
     print("📊 BATCH ANALYSIS COMPLETE")
     print("="*70)
@@ -208,8 +217,64 @@ def list_analyses():
             print(f"   ⚠️ {len(analysis['errors'])} error(s)")
         print()
 
+# --- NEW: Re-run Logic ---
 
-# --- WEB API SERVER ---
+def rerun_agent_and_downstream(ticker: str, agent_name: str) -> Dict[str, Any]:
+    """
+    Loads the latest state for a ticker, re-runs a specific agent,
+    and then runs the downstream agents (Governor, Risk Assessment).
+    """
+    print(f"\n🔄 Re-running agent '{agent_name}' for ${ticker}...")
+    
+    # 1. Map agent name to node function
+    agent_node_map = {
+        "sec": sec_agent_node,
+        "news": news_agent_node,
+        "social": social_agent_node,
+        "chart": chart_agent_node,
+        "analyst": analyst_agent_node
+    }
+    
+    if agent_name not in agent_node_map:
+        raise ValueError(f"Unknown agent: {agent_name}. Must be one of {list(agent_node_map.keys())}")
+        
+    node_to_run = agent_node_map[agent_name]
+
+    # 2. Load the latest state
+    state = load_latest_state(ticker)
+    if not state:
+        raise FileNotFoundError(f"No previous state found for {ticker}. Cannot re-run.")
+
+    # 3. Clear old errors/warnings related to this agent and downstream
+    state["errors"] = [e for e in state.get("errors", []) if not e.startswith(agent_name.capitalize())]
+    state["warnings"] = [w for w in state.get("warnings", []) if not w.startswith(agent_name.capitalize())]
+    
+    # 4. Run the specified agent node
+    print(f"--- Running {agent_name}_agent_node ---")
+    state = node_to_run(state)
+    
+    # 5. Run the downstream nodes (Governor and Risk Assessment)
+    print(f"--- Running governor_agent_node ---")
+    state = governor_agent_node(state)
+    
+    print(f"--- Running risk_assessment_node ---")
+    state = risk_assessment_node(state)
+    
+    # 6. Update final status and save
+    state['timestamp'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    if state.get("errors"):
+        state["workflow_status"] = "completed_with_errors"
+    else:
+        state["workflow_status"] = "completed_successfully"
+        
+    save_workflow_state(ticker, state)
+    save_analysis_summary(ticker, state)
+    
+    print(f"✅ Re-run complete for ${ticker}. New state saved.")
+    return state
+
+
+# --- WEB API SERVER (MODIFIED) ---
 
 def start_api_server(host='0.0.0.0', port=8000):
     """Start a simple Flask API server for AgentSeer."""
@@ -249,6 +314,30 @@ def start_api_server(host='0.0.0.0', port=8000):
         except Exception as e:
             return jsonify({'status': 'error', 'message': str(e)}), 500
     
+    # --- NEW ENDPOINT: RERUN AGENT ---
+    @app.route('/api/rerun', methods=['POST'])
+    def rerun_agent():
+        """Re-run a specific agent for a ticker."""
+        data = request.json
+        ticker = data.get('ticker', '').upper()
+        agent_name = data.get('agent', '').lower() # e.g., "social", "sec"
+        
+        if not ticker or not agent_name:
+            return jsonify({'error': 'Ticker and agent name are required'}), 400
+        
+        try:
+            new_state = rerun_agent_and_downstream(ticker, agent_name)
+            return jsonify({
+                'status': 'success',
+                'ticker': ticker,
+                'agent_rerun': agent_name,
+                'workflow_status': new_state.get('workflow_status'),
+                'governor_summary': new_state.get('governor_summary'),
+                'risk_summary': new_state.get('risk_summary')
+            })
+        except Exception as e:
+            return jsonify({'status': 'error', 'message': str(e)}), 500
+
     @app.route('/api/analyses', methods=['GET'])
     def get_analyses():
         """Get list of all analyses."""
@@ -257,29 +346,67 @@ def start_api_server(host='0.0.0.0', port=8000):
         if not os.path.exists(index_file):
             return jsonify({'analyses': []})
         
-        with open(index_file, 'r') as f:
-            index = json.load(f)
+        try:
+            with open(index_file, 'r') as f:
+                index = json.load(f)
+        except json.JSONDecodeError:
+            return jsonify({'analyses': []})
         
         return jsonify(index)
     
     @app.route('/api/analysis/<ticker>', methods=['GET'])
-    def get_analysis(ticker):
-        """Get detailed analysis for a specific ticker."""
-        # Find most recent state file for this ticker
-        state_dir = Path('workflow_states')
-        state_files = list(state_dir.glob(f"{ticker.upper()}_workflow_state_*.json"))
-        
-        if not state_files:
+    def get_analysis_state(ticker):
+        """Get detailed analysis state for a specific ticker."""
+        state = load_latest_state(ticker.upper())
+        if not state:
             return jsonify({'error': 'Analysis not found'}), 404
         
-        # Get most recent
-        latest_file = max(state_files, key=lambda p: p.stat().st_mtime)
-        
-        with open(latest_file, 'r') as f:
-            state = json.load(f)
-        
         return jsonify(state)
-    
+
+    # --- NEW ENDPOINT: GET SUMMARY REPORT ---
+    @app.route('/api/report/summary/<ticker>/<agent_name>', methods=['GET'])
+    def get_summary_report(ticker, agent_name):
+        """Get a specific agent's summary report."""
+        state = load_latest_state(ticker.upper())
+        if not state:
+            return jsonify({'error': 'Analysis not found'}), 404
+        
+        key = f"{agent_name.lower()}_summary"
+        if key not in state:
+            return jsonify({'error': f'Agent {agent_name} not found in state'}), 404
+            
+        return jsonify({
+            'ticker': ticker,
+            'agent': agent_name,
+            'report_type': 'summary',
+            'content': state.get(key)
+        })
+
+    # --- NEW ENDPOINT: GET DETAILED REPORT ---
+    @app.route('/api/report/detailed/<ticker>/<agent_name>', methods=['GET'])
+    def get_detailed_report(ticker, agent_name):
+        """Get a specific agent's detailed report."""
+        state = load_latest_state(ticker.upper())
+        if not state:
+            return jsonify({'error': 'Analysis not found'}), 404
+        
+        key = f"{agent_name.lower()}_detailed"
+        if key not in state:
+            # Fallback for governor/risk
+            if agent_name == "governor":
+                key = "governor_full_memo"
+            elif agent_name == "risk":
+                key = "risk_full_report"
+            else:
+                 return jsonify({'error': f'Agent {agent_name} not found in state'}), 404
+            
+        return jsonify({
+            'ticker': ticker,
+            'agent': agent_name,
+            'report_type': 'detailed',
+            'content': state.get(key)
+        })
+
     @app.route('/api/health', methods=['GET'])
     def health():
         """Health check endpoint."""
@@ -290,10 +417,13 @@ def start_api_server(host='0.0.0.0', port=8000):
     print(f"{'='*70}")
     print(f"\n📡 Server running on http://{host}:{port}")
     print(f"\n📝 Available endpoints:")
-    print(f"  POST   /api/analyze       - Analyze a ticker")
-    print(f"  GET    /api/analyses      - List all analyses")
-    print(f"  GET    /api/analysis/<ticker> - Get specific analysis")
-    print(f"  GET    /api/health        - Health check")
+    print(f"  POST   /api/analyze           (Body: {{'ticker': 'TSLA'}})")
+    print(f"  POST   /api/rerun             (Body: {{'ticker': 'TSLA', 'agent': 'social'}})")
+    print(f"  GET    /api/analyses")
+    print(f"  GET    /api/analysis/<ticker>")
+    print(f"  GET    /api/report/summary/<ticker>/<agent>")
+    print(f"  GET    /api/report/detailed/<ticker>/<agent>")
+    print(f"  GET    /api/health")
     print(f"\n{'='*70}\n")
     
     app.run(host=host, port=port, debug=False)
@@ -323,19 +453,14 @@ Examples:
     
     args = parser.parse_args()
     
-    # Handle different modes
     if args.list:
         list_analyses()
-    
     elif args.server:
         start_api_server(host=args.host, port=args.port)
-    
     elif args.batch:
         run_batch_analysis(args.batch)
-    
     elif args.ticker:
         run_single_analysis(args.ticker)
-    
     else:
         parser.print_help()
         print("\n💡 Tip: Start with 'python run_agentseer.py TSLA' to analyze Tesla")
