@@ -595,7 +595,18 @@ def start_api_server(host="0.0.0.0", port=8000):
             ticker = request.ticker.upper()
             t = request.t
             sims = request.sims
+            
+            print(f"\n{'='*70}")
+            print(f"🎲 Monte Carlo Simulation Request")
+            print(f"{'='*70}")
+            print(f"Ticker: {ticker}")
+            print(f"Days: {t}")
+            print(f"Simulations: {sims}")
+            print(f"{'='*70}\n")
+            
             result = MC_sims(ticker, t, sims)
+            
+            print(f"\n✅ Monte Carlo simulation completed successfully for {ticker}")
             
             return MC_RolloutResponse(
                 status="success",
@@ -605,8 +616,13 @@ def start_api_server(host="0.0.0.0", port=8000):
                 days=result["days"],
                 forecast=result["median"].tolist(),
             )
+        except ValueError as ve:
+            # ValueError contains user-friendly messages from MC_sims
+            print(f"\n❌ Monte Carlo error: {str(ve)}")
+            raise HTTPException(status_code=400, detail=str(ve))
         except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+            print(f"\n❌ Unexpected error in Monte Carlo: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
     # --- NEW ENDPOINT: RERUN AGENT ---
     @app.post("/api/rerun", response_model=RerunResponse)

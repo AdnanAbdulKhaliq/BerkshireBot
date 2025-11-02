@@ -1,0 +1,75 @@
+2025-11-02 12:09:24 - googleapiclient.discovery_cache - INFO - file_cache is only supported with oauth2client<4.0.0
+INFO:     Started server process [44629]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+2025-11-02 12:09:53 - yfinance - ERROR - Failed to get ticker 'AAPL' reason: Expecting value: line 1 column 1 (char 0)
+2025-11-02 12:09:55 - yfinance - ERROR - $AAPL: possibly delisted; No price data found  (period=2y)
+2025-11-02 12:09:55 - yfinance - ERROR - Failed to get ticker 'AAPL' reason: Expecting value: line 1 column 1 (char 0)
+2025-11-02 12:09:56 - yfinance - ERROR - 
+1 Failed download:
+2025-11-02 12:09:56 - yfinance - ERROR - ['AAPL']: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')
+2025-11-02 12:09:57 - yfinance - ERROR - Failed to get ticker 'AAPL' reason: Expecting value: line 1 column 1 (char 0)
+2025-11-02 12:09:57 - yfinance - ERROR - $AAPL: possibly delisted; No price data found  (period=2y)
+2025-11-02 12:09:57 - yfinance - ERROR - Failed to get ticker 'AAPL' reason: Expecting value: line 1 column 1 (char 0)
+2025-11-02 12:09:59 - yfinance - ERROR - 
+1 Failed download:
+2025-11-02 12:09:59 - yfinance - ERROR - ['AAPL']: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')
+2025-11-02 12:10:01 - yfinance - ERROR - Failed to get ticker 'AAPL' reason: Expecting value: line 1 column 1 (char 0)
+2025-11-02 12:10:01 - yfinance - ERROR - $AAPL: possibly delisted; No price data found  (period=2y)
+2025-11-02 12:10:01 - yfinance - ERROR - Failed to get ticker 'AAPL' reason: Expecting value: line 1 column 1 (char 0)
+2025-11-02 12:10:04 - yfinance - ERROR - 
+1 Failed download:
+2025-11-02 12:10:04 - yfinance - ERROR - ['AAPL']: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')
+✅ Social_Agent: All environment variables validated
+ℹ️ FMP_API_KEY not set - some features limited
+✅ Analyst_Agent: Environment variables validated
+✅ Governor_Agent: All environment variables validated
+✅ Risk_Assessment_Agent: All environment variables validated
+
+======================================================================
+🚀 AgentSeer API Server Starting (FastAPI)
+======================================================================
+
+📡 Server running on http://0.0.0.0:8000
+📚 Interactive API docs: http://0.0.0.0:8000/docs
+📖 Alternative docs: http://0.0.0.0:8000/redoc
+
+📝 Individual Agent endpoints:
+  POST   /api/agents/sec         (Body: {'ticker': 'TSLA'})
+  POST   /api/agents/news        (Body: {'ticker': 'TSLA'})
+  POST   /api/agents/social      (Body: {'ticker': 'TSLA'})
+  POST   /api/agents/chart       (Body: {'ticker': 'TSLA'})
+  POST   /api/agents/analyst     (Body: {'ticker': 'TSLA'})
+  POST   /api/agents/governor    (Body: {'ticker': 'TSLA', 'sec_summary': '...', ...})
+  POST   /api/agents/risk        (Body: {'ticker': 'TSLA', 'sec_summary': '...', ...})
+
+📝 Orchestrated Analysis endpoints:
+  POST   /api/analyze           (Body: {'ticker': 'TSLA'})
+  POST   /api/rerun             (Body: {'ticker': 'TSLA', 'agent': 'social'})
+
+📝 Report & State endpoints:
+  GET    /api/analyses
+  GET    /api/analysis/{ticker}
+  GET    /api/report/summary/{ticker}/{agent}
+  GET    /api/report/detailed/{ticker}/{agent}
+  GET    /api/health
+
+======================================================================
+
+
+======================================================================
+🎲 Monte Carlo Simulation Request
+======================================================================
+Ticker: AAPL
+Days: 10
+Simulations: 100
+======================================================================
+
+Downloading data for ticker: AAPL
+Attempt 1: Trying alternative download method...
+Attempt 2: Trying alternative download method...
+Attempt 3: Trying alternative download method...
+
+❌ Monte Carlo error: No data found for ticker AAPL. The ticker may be invalid or Yahoo Finance is temporarily unavailable. Please try again later or verify the ticker symbol.
+INFO:     127.0.0.1:53926 - "POST /api/mc_rollout HTTP/1.1" 400 Bad Request

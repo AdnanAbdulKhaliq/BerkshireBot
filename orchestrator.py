@@ -233,7 +233,17 @@ def news_agent_node(state: AnalystSwarmState) -> dict:
     """Run the News Agent."""
     print(f"\n📰 Running News Agent for ${state['ticker']}...")
     try:
-        company_name = state["ticker"]
+        TICKER_TO_COMPANY_NAME = {
+            "AAPL": "Apple Inc",
+            "MSFT": "Microsoft Corporation",
+            "GOOGL": "Alphabet Inc",
+            "TSLA": "Tesla, Inc",
+            "AMZN": "Amazon.com, Inc",
+            "NVDA": "NVIDIA Corporation",
+        }
+
+        company_name = TICKER_TO_COMPANY_NAME.get(state["ticker"], state["ticker"])
+
         result = analyze_company_sentiment(
             company_name=company_name, max_articles=30, lookback_days=7, verbose=True
         )

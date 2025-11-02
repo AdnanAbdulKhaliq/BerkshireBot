@@ -1,13 +1,50 @@
-"use client"
+"use client";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts"
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
-import { Activity, TrendingUp, TrendingDown, Minus, Newspaper, Brain, FileText, AlertCircle, Loader2, ExternalLink } from "lucide-react"
-import { useState, useEffect } from "react"
-import { analyzeStock, rerunAgent, getAnalysisState, getNewsAgentData, runMonteCarloSimulation, type AnalysisState, type NewsArticle, type NewsAgentResponse, type MonteCarloResult } from "@/lib/api"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+} from "@/components/ui/chart";
+import {
+  Activity,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  Newspaper,
+  Brain,
+  FileText,
+  AlertCircle,
+  Loader2,
+  ExternalLink,
+} from "lucide-react";
+import { useState, useEffect } from "react";
+import {
+  analyzeStock,
+  rerunAgent,
+  getAnalysisState,
+  getNewsAgentData,
+  runMonteCarloSimulation,
+  type AnalysisState,
+  type NewsArticle,
+  type NewsAgentResponse,
+  type MonteCarloResult,
+} from "@/lib/api";
 
 // Mock data for stock price chart (you can replace this with real data later)
 const stockData = [
@@ -25,7 +62,7 @@ const stockData = [
   { time: "15:00", price: 256.1 },
   { time: "15:30", price: 258.4 },
   { time: "16:00", price: 259.7 },
-]
+];
 
 interface DisplayNewsArticle {
   id: string;
@@ -38,62 +75,84 @@ interface DisplayNewsArticle {
 }
 
 interface AgentData {
-  name: string
-  sentiment: "positive" | "negative" | "neutral"
-  score: number
-  status: string
-  summary: string
-  details?: any
+  name: string;
+  sentiment: "positive" | "negative" | "neutral";
+  score: number;
+  status: string;
+  summary: string;
+  details?: any;
 }
 
 function getSentimentIcon(sentiment: string) {
   switch (sentiment) {
     case "positive":
-      return <TrendingUp className="h-4 w-4 text-accent" />
+      return <TrendingUp className="h-4 w-4 text-accent" />;
     case "negative":
-      return <TrendingDown className="h-4 w-4 text-destructive" />
+      return <TrendingDown className="h-4 w-4 text-destructive" />;
     default:
-      return <Minus className="h-4 w-4 text-muted-foreground" />
+      return <Minus className="h-4 w-4 text-muted-foreground" />;
   }
 }
 
 function getSentimentColor(sentiment: string) {
   switch (sentiment) {
     case "positive":
-      return "bg-accent/10 text-accent border-accent/20"
+      return "bg-accent/10 text-accent border-accent/20";
     case "negative":
-      return "bg-destructive/10 text-destructive border-destructive/20"
+      return "bg-destructive/10 text-destructive border-destructive/20";
     default:
-      return "bg-muted text-muted-foreground border-border"
+      return "bg-muted text-muted-foreground border-border";
   }
 }
 
 function calculateSentimentScore(summary: string | undefined): number {
-  if (!summary) return 5.0
-  
-  const text = summary.toLowerCase()
-  let score = 5.0
-  
+  if (!summary) return 5.0;
+
+  const text = summary.toLowerCase();
+  let score = 5.0;
+
   // Positive indicators
-  const positiveWords = ['strong', 'growth', 'positive', 'bullish', 'upgraded', 'outperform', 'buy', 'excellent', 'improving']
-  const negativeWords = ['weak', 'decline', 'negative', 'bearish', 'downgraded', 'underperform', 'sell', 'poor', 'deteriorating']
-  
-  positiveWords.forEach(word => {
-    if (text.includes(word)) score += 0.5
-  })
-  
-  negativeWords.forEach(word => {
-    if (text.includes(word)) score -= 0.5
-  })
-  
-  return Math.max(1.0, Math.min(10.0, score))
+  const positiveWords = [
+    "strong",
+    "growth",
+    "positive",
+    "bullish",
+    "upgraded",
+    "outperform",
+    "buy",
+    "excellent",
+    "improving",
+  ];
+  const negativeWords = [
+    "weak",
+    "decline",
+    "negative",
+    "bearish",
+    "downgraded",
+    "underperform",
+    "sell",
+    "poor",
+    "deteriorating",
+  ];
+
+  positiveWords.forEach((word) => {
+    if (text.includes(word)) score += 0.5;
+  });
+
+  negativeWords.forEach((word) => {
+    if (text.includes(word)) score -= 0.5;
+  });
+
+  return Math.max(1.0, Math.min(10.0, score));
 }
 
-function determineSentiment(summary: string | undefined): "positive" | "negative" | "neutral" {
-  const score = calculateSentimentScore(summary)
-  if (score > 6.5) return "positive"
-  if (score < 4.5) return "negative"
-  return "neutral"
+function determineSentiment(
+  summary: string | undefined
+): "positive" | "negative" | "neutral" {
+  const score = calculateSentimentScore(summary);
+  if (score > 6.5) return "positive";
+  if (score < 4.5) return "negative";
+  return "neutral";
 }
 
 function convertStateToAgentData(state: AnalysisState): AgentData[] {
@@ -102,167 +161,187 @@ function convertStateToAgentData(state: AnalysisState): AgentData[] {
       name: "SEC Agent",
       sentiment: determineSentiment(state.sec_summary),
       score: calculateSentimentScore(state.sec_summary),
-      status: state.sec_agent_status || 'pending',
-      summary: state.sec_summary || 'Analysis pending...',
-      details: { content: state.sec_summary }
+      status: state.sec_agent_status || "pending",
+      summary: state.sec_summary || "Analysis pending...",
+      details: { content: state.sec_summary },
     },
     {
       name: "News Agent",
       sentiment: determineSentiment(state.news_summary),
       score: calculateSentimentScore(state.news_summary),
-      status: state.news_agent_status || 'pending',
-      summary: state.news_summary || 'Analysis pending...',
-      details: { content: state.news_summary }
+      status: state.news_agent_status || "pending",
+      summary: state.news_summary || "Analysis pending...",
+      details: { content: state.news_summary },
     },
     {
       name: "Social Agent",
       sentiment: determineSentiment(state.social_summary),
       score: calculateSentimentScore(state.social_summary),
-      status: state.social_agent_status || 'pending',
-      summary: state.social_summary || 'Analysis pending...',
-      details: { content: state.social_summary }
+      status: state.social_agent_status || "pending",
+      summary: state.social_summary || "Analysis pending...",
+      details: { content: state.social_summary },
     },
     {
       name: "Chart Agent",
       sentiment: determineSentiment(state.chart_summary),
       score: calculateSentimentScore(state.chart_summary),
-      status: state.chart_agent_status || 'pending',
-      summary: state.chart_summary || 'Analysis pending...',
-      details: { content: state.chart_summary }
+      status: state.chart_agent_status || "pending",
+      summary: state.chart_summary || "Analysis pending...",
+      details: { content: state.chart_summary },
     },
     {
       name: "Analyst Agent",
       sentiment: determineSentiment(state.analyst_summary),
       score: calculateSentimentScore(state.analyst_summary),
-      status: state.analyst_agent_status || 'pending',
-      summary: state.analyst_summary || 'Analysis pending...',
-      details: { content: state.analyst_summary }
+      status: state.analyst_agent_status || "pending",
+      summary: state.analyst_summary || "Analysis pending...",
+      details: { content: state.analyst_summary },
     },
-  ]
-  
-  return agents
+  ];
+
+  return agents;
 }
 
 function formatTimeAgo(dateString: string): string {
-  const date = new Date(dateString)
-  const now = new Date()
-  const diffMs = now.getTime() - date.getTime()
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
-  const diffDays = Math.floor(diffHours / 24)
-  
-  if (diffDays > 0) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`
-  if (diffHours > 0) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`
-  return 'Just now'
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffDays > 0) return `${diffDays} day${diffDays > 1 ? "s" : ""} ago`;
+  if (diffHours > 0) return `${diffHours} hour${diffHours > 1 ? "s" : ""} ago`;
+  return "Just now";
 }
 
-function convertNewsToDisplay(newsData: NewsAgentResponse): DisplayNewsArticle[] {
+function convertNewsToDisplay(
+  newsData: NewsAgentResponse
+): DisplayNewsArticle[] {
   const allArticles: NewsArticle[] = [
     ...newsData.high_impact_articles.slice(0, 3),
     ...newsData.bullish_articles,
     ...newsData.bearish_articles,
     ...newsData.neutral_articles,
-  ]
-  
+  ];
+
   // Remove duplicates
-  const seen = new Set<string>()
-  const uniqueArticles = allArticles.filter(article => {
-    if (seen.has(article.url)) return false
-    seen.add(article.url)
-    return true
-  })
-  
+  const seen = new Set<string>();
+  const uniqueArticles = allArticles.filter((article) => {
+    if (seen.has(article.url)) return false;
+    seen.add(article.url);
+    return true;
+  });
+
   return uniqueArticles.map((article, index) => ({
     id: article.url || `article-${index}`,
     title: article.title,
     source: article.source,
     time: formatTimeAgo(article.published_at),
-    sentiment: article.sentiment.toLowerCase() === 'bullish' ? 'positive' as const : 
-               article.sentiment.toLowerCase() === 'bearish' ? 'negative' as const : 
-               'neutral' as const,
+    sentiment:
+      article.sentiment.toLowerCase() === "bullish"
+        ? ("positive" as const)
+        : article.sentiment.toLowerCase() === "bearish"
+        ? ("negative" as const)
+        : ("neutral" as const),
     summary: article.reason,
     url: article.url,
-  }))
+  }));
 }
 
 export function AnalystDashboard() {
-  const [ticker, setTicker] = useState("TSLA")
-  const [loading, setLoading] = useState(false)
-  const [analysisState, setAnalysisState] = useState<AnalysisState | null>(null)
-  const [agentData, setAgentData] = useState<AgentData[]>([])
-  const [selectedAgent, setSelectedAgent] = useState<AgentData | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [newsArticles, setNewsArticles] = useState<DisplayNewsArticle[]>([])
-  const [selectedNews, setSelectedNews] = useState<DisplayNewsArticle | null>(null)
-  const [mcData, setMcData] = useState<{ day: number; price: number }[]>([])
-  const [mcLoading, setMcLoading] = useState(false)
+  const [ticker, setTicker] = useState("TSLA");
+  const [loading, setLoading] = useState(false);
+  const [analysisState, setAnalysisState] = useState<AnalysisState | null>(
+    null
+  );
+  const [agentData, setAgentData] = useState<AgentData[]>([]);
+  const [selectedAgent, setSelectedAgent] = useState<AgentData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [newsArticles, setNewsArticles] = useState<DisplayNewsArticle[]>([]);
+  const [selectedNews, setSelectedNews] = useState<DisplayNewsArticle | null>(
+    null
+  );
+  const [mcData, setMcData] = useState<{ day: number; price: number }[]>([]);
+  const [mcLoading, setMcLoading] = useState(false);
 
   const handleAnalyze = async () => {
     if (!ticker.trim()) {
-      setError('Please enter a ticker symbol')
-      return
+      setError("Please enter a ticker symbol");
+      return;
     }
 
-    setLoading(true)
-    setMcLoading(true)
-    setError(null)
+    setLoading(true);
+    setError(null);
 
     try {
-      // Run Monte Carlo simulation, news data, and analysis in parallel
-      const [mcResult, newsData] = await Promise.all([
-        runMonteCarloSimulation(ticker, 30, 1000),
-        getNewsAgentData(ticker),
-        analyzeStock(ticker)
-      ])
-
-      // Set Monte Carlo data
-      const chartData = mcResult.days.map((day, index) => ({
-        day: day,
-        price: mcResult.forecast[index]
-      }))
-      setMcData(chartData)
+      // Just fetch news agent data
+      const newsData = await getNewsAgentData(ticker);
 
       // Set news articles
-      setNewsArticles(convertNewsToDisplay(newsData))
+      setNewsArticles(convertNewsToDisplay(newsData));
 
-      // Get full analysis state
-      const fullState = await getAnalysisState(ticker)
-      setAnalysisState(fullState)
-      setAgentData(convertStateToAgentData(fullState))
+      // Create a simple agent data entry for news agent to show sentiment
+      const newsAgentData: AgentData = {
+        name: "News Agent",
+        sentiment:
+          newsData.weighted_sentiment_score > 0.1
+            ? "positive"
+            : newsData.weighted_sentiment_score < -0.1
+            ? "negative"
+            : "neutral",
+        score: ((newsData.weighted_sentiment_score + 1) / 2) * 10, // Convert -1 to 1 scale to 0-10
+        status: "success",
+        summary: `Analyzed ${
+          newsData.total_articles_analyzed
+        } articles. Bullish: ${
+          newsData.sentiment_breakdown.bullish
+        }, Bearish: ${newsData.sentiment_breakdown.bearish}, Neutral: ${
+          newsData.sentiment_breakdown.neutral
+        }. Weighted sentiment score: ${newsData.weighted_sentiment_score.toFixed(
+          2
+        )}`,
+        details: { content: JSON.stringify(newsData, null, 2) },
+      };
+
+      setAgentData([newsAgentData]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Analysis failed')
+      setError(err instanceof Error ? err.message : "Analysis failed");
     } finally {
-      setLoading(false)
-      setMcLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   const handleRerun = async (agentName: string) => {
-    if (!ticker) return
+    if (!ticker) return;
 
-    setLoading(true)
-    setError(null)
+    setLoading(true);
+    setError(null);
 
-    const agentId = agentName.toLowerCase().replace(' agent', '')
+    const agentId = agentName.toLowerCase().replace(" agent", "");
 
     try {
-      await rerunAgent(ticker, agentId)
-      const fullState = await getAnalysisState(ticker)
-      setAnalysisState(fullState)
-      setAgentData(convertStateToAgentData(fullState))
+      await rerunAgent(ticker, agentId);
+      const fullState = await getAnalysisState(ticker);
+      setAnalysisState(fullState);
+      setAgentData(convertStateToAgentData(fullState));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Rerun failed')
+      setError(err instanceof Error ? err.message : "Rerun failed");
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   return (
     <div className="flex flex-col gap-6 p-6">
       {/* Header with Search */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight text-balance">Analyst Swarm Dashboard</h1>
-          <p className="text-muted-foreground mt-1">Multi-agent financial risk assessment system</p>
+          <h1 className="text-3xl font-semibold tracking-tight text-balance">
+            Analyst Swarm Dashboard
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            Multi-agent financial risk assessment system
+          </p>
         </div>
         <div className="flex items-center gap-3">
           <input
@@ -271,7 +350,7 @@ export function AnalystDashboard() {
             onChange={(e) => setTicker(e.target.value.toUpperCase())}
             placeholder="Enter ticker"
             className="px-3 py-1.5 bg-background border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-            onKeyPress={(e) => e.key === 'Enter' && handleAnalyze()}
+            onKeyPress={(e) => e.key === "Enter" && handleAnalyze()}
             disabled={loading}
           />
           <button
@@ -285,7 +364,7 @@ export function AnalystDashboard() {
                 Analyzing...
               </>
             ) : (
-              'Analyze'
+              "Analyze"
             )}
           </button>
         </div>
@@ -304,10 +383,18 @@ export function AnalystDashboard() {
             <Activity className="h-3.5 w-3.5" />
             <span className="font-mono text-xs">{ticker}</span>
           </Badge>
-          <Badge className={analysisState.workflow_status === 'completed_successfully' ? 'bg-accent text-accent-foreground' : 'bg-destructive text-destructive-foreground'}>
+          <Badge
+            className={
+              analysisState.workflow_status === "completed_successfully"
+                ? "bg-accent text-accent-foreground"
+                : "bg-destructive text-destructive-foreground"
+            }
+          >
             {analysisState.workflow_status}
           </Badge>
-          <span className="text-xs text-muted-foreground">{analysisState.timestamp}</span>
+          <span className="text-xs text-muted-foreground">
+            {analysisState.timestamp}
+          </span>
         </div>
       )}
 
@@ -320,54 +407,14 @@ export function AnalystDashboard() {
               <Activity className="h-5 w-5 text-primary" />
               Stock Price Movement
             </CardTitle>
-            <CardDescription>Monte Carlo price forecast (30 days)</CardDescription>
+            <CardDescription>
+              Monte Carlo forecast (coming soon)
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            {mcLoading ? (
-              <div className="h-[300px] flex items-center justify-center">
-                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-              </div>
-            ) : mcData.length > 0 ? (
-              <ChartContainer
-                config={{
-                  price: {
-                    label: "Price",
-                    color: "hsl(var(--primary))",
-                  },
-                }}
-                className="h-[300px]"
-              >
-                <AreaChart data={mcData}>
-                  <defs>
-                    <linearGradient id="fillPrice" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis dataKey="day" tickLine={false} axisLine={false} tickMargin={8} className="text-xs" />
-                  <YAxis
-                    tickLine={false}
-                    axisLine={false}
-                    tickMargin={8}
-                    className="text-xs"
-                    domain={["dataMin - 5", "dataMax + 5"]}
-                  />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Area
-                    type="monotone"
-                    dataKey="price"
-                    stroke="hsl(var(--primary))"
-                    strokeWidth={2}
-                    fill="url(#fillPrice)"
-                  />
-                </AreaChart>
-              </ChartContainer>
-            ) : (
-              <div className="h-[300px] flex items-center justify-center text-sm text-muted-foreground">
-                Click "Analyze" to generate Monte Carlo forecast
-              </div>
-            )}
+            <div className="h-[300px] flex items-center justify-center text-sm text-muted-foreground">
+              Monte Carlo simulation temporarily disabled
+            </div>
           </CardContent>
         </Card>
 
@@ -389,9 +436,13 @@ export function AnalystDashboard() {
                     onClick={() => setSelectedNews(article)}
                     className="w-full flex gap-3 rounded-lg border border-border bg-card p-3 transition-all hover:bg-accent/5 hover:border-primary/50 hover:shadow-md cursor-pointer text-left"
                   >
-                    <div className="mt-1">{getSentimentIcon(article.sentiment)}</div>
+                    <div className="mt-1">
+                      {getSentimentIcon(article.sentiment)}
+                    </div>
                     <div className="flex-1 space-y-1">
-                      <h4 className="text-sm font-medium leading-snug text-pretty">{article.title}</h4>
+                      <h4 className="text-sm font-medium leading-snug text-pretty">
+                        {article.title}
+                      </h4>
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
                         <span>{article.source}</span>
                         <span>•</span>
@@ -402,7 +453,8 @@ export function AnalystDashboard() {
                 ))
               ) : (
                 <div className="text-center text-sm text-muted-foreground py-8">
-                  No news articles available. Click "Analyze" to fetch latest news.
+                  No news articles available. Click "Analyze" to fetch latest
+                  news.
                 </div>
               )}
             </div>
@@ -416,7 +468,9 @@ export function AnalystDashboard() {
               <Brain className="h-5 w-5 text-primary" />
               Agent Sentiment Analysis
             </CardTitle>
-            <CardDescription>Multi-perspective risk assessment from specialist agents</CardDescription>
+            <CardDescription>
+              Multi-perspective risk assessment from specialist agents
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {agentData.length > 0 ? (
@@ -430,15 +484,22 @@ export function AnalystDashboard() {
                   >
                     <div className="flex items-center justify-between">
                       <h4 className="text-sm font-semibold">{agent.name}</h4>
-                      <Badge variant="outline" className={getSentimentColor(agent.sentiment)}>
+                      <Badge
+                        variant="outline"
+                        className={getSentimentColor(agent.sentiment)}
+                      >
                         {agent.sentiment}
                       </Badge>
                     </div>
                     <div className="flex items-baseline gap-2">
-                      <span className="text-3xl font-bold font-mono">{agent.score.toFixed(1)}</span>
+                      <span className="text-3xl font-bold font-mono">
+                        {agent.score.toFixed(1)}
+                      </span>
                       <span className="text-sm text-muted-foreground">/10</span>
                     </div>
-                    <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">{agent.summary}</p>
+                    <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">
+                      {agent.summary}
+                    </p>
                     <div className="mt-1">
                       <div className="h-1.5 w-full rounded-full bg-secondary overflow-hidden">
                         <div
@@ -449,8 +510,8 @@ export function AnalystDashboard() {
                     </div>
                     <button
                       onClick={(e) => {
-                        e.stopPropagation()
-                        handleRerun(agent.name)
+                        e.stopPropagation();
+                        handleRerun(agent.name);
                       }}
                       disabled={loading}
                       className="mt-2 w-full px-3 py-1.5 bg-secondary hover:bg-secondary/80 disabled:bg-muted text-secondary-foreground rounded-md text-xs transition-colors"
@@ -471,61 +532,74 @@ export function AnalystDashboard() {
       </div>
 
       {/* Governor & Risk Summary */}
-      {analysisState && (analysisState.governor_summary || analysisState.risk_summary) && (
-        <div className="grid gap-6 lg:grid-cols-2">
-          {analysisState.governor_summary && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <FileText className="h-5 w-5 text-primary" />
-                  Governor Summary
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
-                  {analysisState.governor_summary}
-                </p>
-              </CardContent>
-            </Card>
-          )}
+      {analysisState &&
+        (analysisState.governor_summary || analysisState.risk_summary) && (
+          <div className="grid gap-6 lg:grid-cols-2">
+            {analysisState.governor_summary && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <FileText className="h-5 w-5 text-primary" />
+                    Governor Summary
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
+                    {analysisState.governor_summary}
+                  </p>
+                </CardContent>
+              </Card>
+            )}
 
-          {analysisState.risk_summary && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <AlertCircle className="h-5 w-5 text-destructive" />
-                  Risk Assessment
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
-                  {analysisState.risk_summary}
-                </p>
-              </CardContent>
-            </Card>
-          )}
-        </div>
-      )}
+            {analysisState.risk_summary && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <AlertCircle className="h-5 w-5 text-destructive" />
+                    Risk Assessment
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
+                    {analysisState.risk_summary}
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        )}
 
-      <Dialog open={!!selectedAgent} onOpenChange={(open) => !open && setSelectedAgent(null)}>
+      <Dialog
+        open={!!selectedAgent}
+        onOpenChange={(open) => !open && setSelectedAgent(null)}
+      >
         <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
           {selectedAgent && (
             <>
               <DialogHeader>
                 <div className="flex items-center justify-between">
-                  <DialogTitle className="text-2xl">{selectedAgent.name}</DialogTitle>
-                  <Badge variant="outline" className={getSentimentColor(selectedAgent.sentiment)}>
+                  <DialogTitle className="text-2xl">
+                    {selectedAgent.name}
+                  </DialogTitle>
+                  <Badge
+                    variant="outline"
+                    className={getSentimentColor(selectedAgent.sentiment)}
+                  >
                     {selectedAgent.sentiment}
                   </Badge>
                 </div>
-                <DialogDescription className="text-base">{selectedAgent.summary}</DialogDescription>
+                <DialogDescription className="text-base">
+                  {selectedAgent.summary}
+                </DialogDescription>
               </DialogHeader>
 
               <div className="space-y-6 mt-4">
                 {/* Score Display */}
                 <div className="flex items-center gap-4 p-4 rounded-lg bg-muted/50">
                   <div className="flex items-baseline gap-2">
-                    <span className="text-5xl font-bold font-mono">{selectedAgent.score.toFixed(1)}</span>
+                    <span className="text-5xl font-bold font-mono">
+                      {selectedAgent.score.toFixed(1)}
+                    </span>
                     <span className="text-lg text-muted-foreground">/10</span>
                   </div>
                   <div className="flex-1">
@@ -542,7 +616,8 @@ export function AnalystDashboard() {
                 <div>
                   <h4 className="font-semibold mb-2">Full Analysis</h4>
                   <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
-                    {selectedAgent.details?.content || 'No detailed analysis available'}
+                    {selectedAgent.details?.content ||
+                      "No detailed analysis available"}
                   </p>
                 </div>
 
@@ -556,14 +631,22 @@ export function AnalystDashboard() {
       </Dialog>
 
       {/* News Article Detail Dialog */}
-      <Dialog open={!!selectedNews} onOpenChange={(open) => !open && setSelectedNews(null)}>
+      <Dialog
+        open={!!selectedNews}
+        onOpenChange={(open) => !open && setSelectedNews(null)}
+      >
         <DialogContent className="max-w-2xl">
           {selectedNews && (
             <>
               <DialogHeader>
                 <div className="flex items-start justify-between gap-4">
-                  <DialogTitle className="text-xl leading-tight pr-8">{selectedNews.title}</DialogTitle>
-                  <Badge variant="outline" className={getSentimentColor(selectedNews.sentiment)}>
+                  <DialogTitle className="text-xl leading-tight pr-8">
+                    {selectedNews.title}
+                  </DialogTitle>
+                  <Badge
+                    variant="outline"
+                    className={getSentimentColor(selectedNews.sentiment)}
+                  >
                     {selectedNews.sentiment}
                   </Badge>
                 </div>
@@ -601,5 +684,5 @@ export function AnalystDashboard() {
         </DialogContent>
       </Dialog>
     </div>
-  )
+  );
 }

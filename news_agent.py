@@ -852,7 +852,7 @@ def main():
     # Run analysis
     try:
         results = analyze_company_sentiment(
-            company_name,
+            ticker=company_name,
             max_articles=max_articles,
             lookback_days=lookback_days,
             verbose=True,

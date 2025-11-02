@@ -13,18 +13,47 @@ import time
 #2024-11-04  220.981537  221.757922  218.692204  219.966273  44944500
 
 def MC_sims(ticker: str, t: int, sims: int, display: bool = False) -> np.ndarray:
-    # Download historical data
+    # Download historical data with retry logic and custom headers
     print(f"Downloading data for ticker: {ticker}")
     
-    try:
-        ticker_obj = yf.Ticker(ticker)
-        data = ticker_obj.history(period="2y", auto_adjust=True)
-        time.sleep(0.1)
-    except Exception as e:
-        raise ValueError(f"Failed to download data for ticker {ticker}: {str(e)}")
+    # Set custom user agent to avoid being blocked
+    import requests
+    session = requests.Session()
+    session.headers.update({
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    })
+    
+    max_retries = 3
+    data = None
+    
+    for attempt in range(max_retries):
+        try:
+            # Use custom session
+            ticker_obj = yf.Ticker(ticker, session=session)
+            data = ticker_obj.history(period="2y", auto_adjust=True, timeout=10)
+            
+            if data is not None and not data.empty:
+                print(f"✅ Successfully downloaded {len(data)} days of historical data")
+                break
+            
+            # If empty, try alternative download method
+            print(f"Attempt {attempt + 1}: Trying alternative download method...")
+            data = yf.download(ticker, period="2y", auto_adjust=True, progress=False, timeout=10)
+            
+            if data is not None and not data.empty:
+                print(f"✅ Successfully downloaded {len(data)} days of historical data")
+                break
+                
+            time.sleep(1 + attempt)  # Increasing wait time with each attempt
+            
+        except Exception as e:
+            print(f"Attempt {attempt + 1} failed: {str(e)}")
+            if attempt == max_retries - 1:
+                raise ValueError(f"Failed to download data for ticker {ticker} after {max_retries} attempts. Yahoo Finance may be temporarily unavailable. Error: {str(e)}")
+            time.sleep(1 + attempt)
     
     if data is None or data.empty:
-        raise ValueError(f"No data found for ticker {ticker}. Please verify the ticker symbol is correct.")
+        raise ValueError(f"No data found for ticker {ticker}. The ticker may be invalid or Yahoo Finance is temporarily unavailable. Please try again later or verify the ticker symbol.")
     
     prices = data['Close'].values
     
