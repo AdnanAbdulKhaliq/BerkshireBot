@@ -363,6 +363,11 @@ def start_api_server(host="0.0.0.0", port=8000):
         governor_summary: str | None = None
         risk_summary: str | None = None
 
+    class MC_RolloutRequest(BaseModel):
+        ticker: str
+        t: int = 10
+        sims: int = 1000
+
     class MC_RolloutResponse(BaseModel):
         status: str
         ticker: str
@@ -390,38 +395,42 @@ def start_api_server(host="0.0.0.0", port=8000):
             raise HTTPException(status_code=400, detail="No ticker provided")
 
         try:
-            final_state = run_analyst_swarm(ticker, save_state=True)
-            save_analysis_summary(ticker, final_state)
+            # --- UPDATED TO RUN IN BACKGROUND ---
+            # This makes the API return instantly
+            background_tasks.add_task(run_analyst_swarm, ticker, save_state=True)
 
             return AnalyzeResponse(
-                status="success",
+                status="pending",
                 ticker=ticker,
-                workflow_status=final_state.get("workflow_status", "unknown"),
-                timestamp=final_state.get("timestamp", ""),
-                governor_summary=final_state.get("governor_summary"),
-                risk_summary=final_state.get("risk_summary"),
+                workflow_status="Analysis started in background. Check /api/analysis/{ticker} for status.",
+                timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                governor_summary="Analysis pending...",
+                risk_summary="Analysis pending...",
             )
         except Exception as e:
-
             raise HTTPException(status_code=500, detail=str(e))
 
     # --- NEW ENDPOINT: MC ROLLOUT ---
-    @app.route('/api/mc_rollout', response_model=MC_RolloutResponse)
-    async def mc_rollout(request: Request):
+    # --- THIS IS THE CORRECTED FUNCTION ---
+    @app.post('/api/mc_rollout', response_model=MC_RolloutResponse)
+    async def mc_rollout(request: MC_RolloutRequest):
         """Run a Monte Carlo simulation for a ticker."""
-        data = request.json
-        ticker = data.get('ticker').upper()
-        t = data.get('t', 10)
-        sims = data.get('sims', 1000)
-        days, forecast = MC_sims(ticker, t, sims)
-        return MC_RolloutResponse(
-            status='success',
-            ticker=ticker,
-            t=t,
-            sims=sims,
-            days=days,
-            forecast=forecast.tolist()
-        )
+        try:
+            ticker = request.ticker.upper()
+            t = request.t
+            sims = request.sims
+            days, forecast = MC_sims(ticker, t, sims)
+            return MC_RolloutResponse(
+                status='success',
+                ticker=ticker,
+                t=t,
+                sims=sims,
+                days=days,
+                forecast=forecast.tolist()
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    # --- END OF CORRECTED FUNCTION ---
 
 
     # --- NEW ENDPOINT: RERUN AGENT ---
