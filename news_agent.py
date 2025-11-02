@@ -647,6 +647,93 @@ def analyze_company_sentiment(
 
 
 # ============================================================================
+# STEP 5.5: Wrapper Function for Orchestrator
+# ============================================================================
+
+
+def run_news_agent(ticker: str, max_articles: int = 30, lookback_days: int = 7) -> dict:
+    """
+    Wrapper function to match the interface of other agents.
+
+    Args:
+        ticker: Stock ticker symbol (e.g., 'AAPL', 'TSLA')
+        max_articles: Maximum number of articles to analyze (default: 30)
+        lookback_days: Number of days to look back for news (default: 7)
+
+    Returns:
+        Dictionary containing:
+        - ticker: Stock ticker analyzed
+        - agent: Agent name
+        - summary_report: Brief summary of sentiment analysis
+        - detailed_report: Full analysis with all articles
+        - All fields from analyze_company_sentiment()
+
+    Example:
+        >>> result = run_news_agent("AAPL", max_articles=20)
+        >>> print(result["summary_report"])
+        >>> print(result["weighted_sentiment_score"])
+    """
+    try:
+        print(f"\n{'='*60}")
+        print(f"🤖 News Agent (Enhanced): Analyzing ${ticker}")
+        print(f"{'='*60}\n")
+
+        # Run the sentiment analysis
+        results = analyze_company_sentiment(
+            company_name=ticker, max_articles=max_articles, lookback_days=lookback_days
+        )
+
+        # Create summary report
+        sentiment_score = results.get("weighted_sentiment_score", 0)
+        bullish_count = results.get("sentiment_breakdown", {}).get("bullish", 0)
+        bearish_count = results.get("sentiment_breakdown", {}).get("bearish", 0)
+        neutral_count = results.get("sentiment_breakdown", {}).get("neutral", 0)
+        total_articles = results.get("total_articles_analyzed", 0)
+
+        summary_report = f"""**News Agent Summary: ${ticker}**
+
+📊 **Sentiment Analysis:**
+* Weighted Sentiment Score: {sentiment_score:.2f}
+* Articles Analyzed: {total_articles}
+* Bullish: {bullish_count} | Bearish: {bearish_count} | Neutral: {neutral_count}
+
+💡 **Key Finding:**
+{results.get("dashboard_summary", "No summary available")[:300]}...
+
+---
+*Agent: News Agent (Enhanced) | Model: Gemini Pro*
+"""
+
+        detailed_report = results.get(
+            "dashboard_summary", "No detailed analysis available"
+        )
+
+        # Return comprehensive dictionary with all original data
+        return {
+            "ticker": ticker,
+            "agent": "News",
+            "summary_report": summary_report.strip(),
+            "detailed_report": detailed_report,
+            **results,  # Include all original fields from analyze_company_sentiment
+        }
+
+    except Exception as e:
+        print(f"❌ News_Agent: Analysis failed - {e}")
+        import traceback
+
+        traceback.print_exc()
+
+        error_msg = str(e)
+        return {
+            "ticker": ticker,
+            "agent": "News",
+            "error": error_msg,
+            "summary_report": f"**Error analyzing ${ticker}**: {error_msg}",
+            "detailed_report": f"**Error analyzing ${ticker}**: {error_msg}\n\n{traceback.format_exc()}",
+        }
+
+
+# ============================================================================
 # STEP 6: Excel Export Function
 # ============================================================================
 

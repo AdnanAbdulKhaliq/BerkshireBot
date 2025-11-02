@@ -1025,7 +1025,28 @@ to ensure only recent, high-quality social sentiment data is analyzed.
         """
 
         print("✅ Social_Agent: Analysis complete")
-        return summary_report.strip(), detailed_report
+
+        # Return comprehensive dictionary like news_agent
+        return {
+            "ticker": ticker,
+            "agent": "Social-Sentimentalist",
+            "overall_sentiment": sentiment,
+            "sentiment_score": score,
+            "data_quality": quality,
+            "sources_analyzed": source_count,
+            "search_status": search_metadata["search_status"],
+            "freshness_stats": freshness_stats,
+            "quality_stats": quality_stats,
+            "executive_summary": exec_summary,
+            "consensus_view": analysis_json.get("consensus_view", ""),
+            "key_themes": analysis_json.get("key_themes", []),
+            "bullish_signals": analysis_json.get("bullish_signals", []),
+            "bearish_signals": analysis_json.get("bearish_signals", []),
+            "risk_factors": analysis_json.get("risk_factors", []),
+            "raw_sources": raw_results,
+            "summary_report": summary_report.strip(),
+            "detailed_report": detailed_report,
+        }
 
     except Exception as e:
         print(f"❌ Social_Agent: Chain execution failed - {e}")
@@ -1039,7 +1060,13 @@ to ensure only recent, high-quality social sentiment data is analyzed.
 ⚠️ **Error:** Analysis could not be completed.
 **Details:** {str(e)}
 """
-        return error_report.strip(), error_report.strip()
+        return {
+            "ticker": ticker,
+            "agent": "Social-Sentimentalist",
+            "error": str(e),
+            "summary_report": error_report.strip(),
+            "detailed_report": error_report.strip(),
+        }
 
 
 # --- CLI ENTRY POINT ---
@@ -1054,11 +1081,11 @@ if __name__ == "__main__":
         print(f"No ticker provided, using default: {ticker}")
         print("Usage: python social_agent.py <TICKER>\n")
 
-    summary, detailed = run_social_agent(ticker, save_to_file=True)
+    result = run_social_agent(ticker, save_to_file=True)
 
     print("\n" + "=" * 60)
     print("SUMMARY OUTPUT (Console)")
     print("=" * 60 + "\n")
-    print(summary)
+    print(result.get("summary_report", ""))
     print("\n" + "=" * 60)
     print("\n📄 Full detailed report saved to 'reports/' directory")
