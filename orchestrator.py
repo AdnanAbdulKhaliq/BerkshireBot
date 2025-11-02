@@ -49,6 +49,7 @@ RETRY_CONFIG = {
 
 # --- STATE DEFINITION (MODIFIED) ---
 
+
 def merge_lists(left: list | None, right: list | None) -> list:
     """Merge two lists, used for errors and warnings."""
     if left is None:
@@ -99,7 +100,7 @@ class AnalystSwarmState(TypedDict):
 
     # Risk Assessment Output
     risk_summary: str
-    risk_full_report: str # This is the "detailed report" from risk
+    risk_full_report: str  # This is the "detailed report" from risk
     risk_status: str
     risk_attempts: int
 
@@ -110,6 +111,7 @@ class AnalystSwarmState(TypedDict):
 
 
 # --- RETRY LOGIC DECORATOR ---
+
 
 def with_retry(
     agent_name: str,
@@ -123,7 +125,7 @@ def with_retry(
     def decorator(agent_func: Callable) -> Callable:
         def wrapper(state: AnalystSwarmState) -> AnalystSwarmState:
             attempts_key = f"{agent_name.lower().replace(' ', '_')}_attempts"
-            state.setdefault(attempts_key, 0) # Ensure key exists
+            state.setdefault(attempts_key, 0)  # Ensure key exists
 
             for attempt in range(max_retries + 1):
                 try:
@@ -136,6 +138,7 @@ def with_retry(
                         )
                         if RETRY_CONFIG["jitter"]:
                             import random
+
                             delay = delay * (0.5 + random.random())
                         print(
                             f"⏳ {agent_name}: Retry attempt {attempt + 1}/{max_retries + 1} after {delay:.1f}s delay..."
@@ -144,7 +147,7 @@ def with_retry(
 
                     # Execute the agent function
                     # We pass a copy to avoid partial updates on failure
-                    result_state = agent_func(state.copy()) 
+                    result_state = agent_func(state.copy())
 
                     # Check if successful
                     status_key = f"{agent_name.lower().replace(' ', '_')}_status"
@@ -164,7 +167,7 @@ def with_retry(
                         print(
                             f"❌ {agent_name}: Failed after {max_retries + 1} attempts (no exception)"
                         )
-                        state.update(result_state) # Record the failure state
+                        state.update(result_state)  # Record the failure state
                         return state
 
                 except Exception as e:
@@ -174,19 +177,21 @@ def with_retry(
                         print(f"❌ {agent_name}: All retry attempts exhausted")
                         status_key = f"{agent_name.lower().replace(' ', '_')}_status"
                         summary_key = f"{agent_name.lower().replace(' ', '_')}_summary"
-                        detailed_key = f"{agent_name.lower().replace(' ', '_')}_detailed"
-                        
+                        detailed_key = (
+                            f"{agent_name.lower().replace(' ', '_')}_detailed"
+                        )
+
                         error_msg = f"Error after {max_retries + 1} attempts: {str(e)}"
                         state[status_key] = "failed"
                         state[summary_key] = error_msg
                         state[detailed_key] = error_msg
-                        
+
                         state.setdefault("errors", []).append(
                             f"{agent_name}: {str(e)} (after {max_retries + 1} attempts)"
                         )
                         return state
-            
-            return state # Should be unreachable, but for safety
+
+            return state  # Should be unreachable, but for safety
 
         return wrapper
 
@@ -195,6 +200,7 @@ def with_retry(
 
 # --- AGENT NODE FUNCTIONS (MODIFIED) ---
 
+
 @with_retry("SEC Agent")
 def sec_agent_node(state: AnalystSwarmState) -> dict:
     """Run the SEC Agent."""
@@ -202,13 +208,15 @@ def sec_agent_node(state: AnalystSwarmState) -> dict:
     try:
         result = run_sec_agent(state["ticker"], save_to_file=True)
         if "error" in result:
-             raise Exception(result["error"])
-        
+            raise Exception(result["error"])
+
         print("✅ SEC Agent completed")
         return {
             "sec_agent_summary": result.get("summary_report", str(result)),
-            "sec_agent_detailed": result.get("detailed_report", "No detailed report available."),
-            "sec_agent_status": "success"
+            "sec_agent_detailed": result.get(
+                "detailed_report", "No detailed report available."
+            ),
+            "sec_agent_status": "success",
         }
     except Exception as e:
         print(f"❌ SEC Agent failed: {e}")
@@ -217,7 +225,7 @@ def sec_agent_node(state: AnalystSwarmState) -> dict:
             "sec_agent_summary": error_msg,
             "sec_agent_detailed": error_msg,
             "sec_agent_status": "failed",
-            "errors": [f"SEC Agent: {str(e)}"]
+            "errors": [f"SEC Agent: {str(e)}"],
         }
 
 
@@ -247,7 +255,7 @@ def news_agent_node(state: AnalystSwarmState) -> dict:
         return {
             "news_agent_summary": summary,
             "news_agent_detailed": json.dumps(result, indent=2, default=str),
-            "news_agent_status": "success"
+            "news_agent_status": "success",
         }
     except Exception as e:
         print(f"❌ News Agent failed: {e}")
@@ -256,7 +264,7 @@ def news_agent_node(state: AnalystSwarmState) -> dict:
             "news_agent_summary": error_msg,
             "news_agent_detailed": error_msg,
             "news_agent_status": "failed",
-            "errors": [f"News Agent: {str(e)}"]
+            "errors": [f"News Agent: {str(e)}"],
         }
 
 
@@ -267,13 +275,15 @@ def social_agent_node(state: AnalystSwarmState) -> dict:
     try:
         result = run_social_agent(state["ticker"], save_to_file=True)
         if "error" in result:
-             raise Exception(result["error"])
+            raise Exception(result["error"])
 
         print("✅ Social Agent completed")
         return {
             "social_agent_summary": result.get("summary_report", str(result)),
-            "social_agent_detailed": result.get("detailed_report", "No detailed report available."),
-            "social_agent_status": "success"
+            "social_agent_detailed": result.get(
+                "detailed_report", "No detailed report available."
+            ),
+            "social_agent_status": "success",
         }
     except Exception as e:
         print(f"❌ Social Agent failed: {e}")
@@ -282,7 +292,7 @@ def social_agent_node(state: AnalystSwarmState) -> dict:
             "social_agent_summary": error_msg,
             "social_agent_detailed": error_msg,
             "social_agent_status": "failed",
-            "errors": [f"Social Agent: {str(e)}"]
+            "errors": [f"Social Agent: {str(e)}"],
         }
 
 
@@ -303,7 +313,7 @@ def chart_agent_node(state: AnalystSwarmState) -> dict:
         return {
             "chart_agent_summary": report,
             "chart_agent_detailed": report,  # Summary and detailed are the same for placeholder
-            "chart_agent_status": "success"
+            "chart_agent_status": "success",
         }
     except Exception as e:
         print(f"❌ Chart Agent failed: {e}")
@@ -312,7 +322,7 @@ def chart_agent_node(state: AnalystSwarmState) -> dict:
             "chart_agent_summary": error_msg,
             "chart_agent_detailed": error_msg,
             "chart_agent_status": "failed",
-            "errors": [f"Chart Agent: {str(e)}"]
+            "errors": [f"Chart Agent: {str(e)}"],
         }
 
 
@@ -323,13 +333,15 @@ def analyst_agent_node(state: AnalystSwarmState) -> dict:
     try:
         result = run_analyst_agent(state["ticker"], save_to_file=True)
         if "error" in result:
-             raise Exception(result["error"])
+            raise Exception(result["error"])
 
         print("✅ Analyst Agent completed")
         return {
             "analyst_agent_summary": result.get("summary_report", str(result)),
-            "analyst_agent_detailed": result.get("detailed_report", "No detailed report available."),
-            "analyst_agent_status": "success"
+            "analyst_agent_detailed": result.get(
+                "detailed_report", "No detailed report available."
+            ),
+            "analyst_agent_status": "success",
         }
     except Exception as e:
         print(f"❌ Analyst Agent failed: {e}")
@@ -338,7 +350,7 @@ def analyst_agent_node(state: AnalystSwarmState) -> dict:
             "analyst_agent_summary": error_msg,
             "analyst_agent_detailed": error_msg,
             "analyst_agent_status": "failed",
-            "errors": [f"Analyst Agent: {str(e)}"]
+            "errors": [f"Analyst Agent: {str(e)}"],
         }
 
 
@@ -358,13 +370,15 @@ def governor_agent_node(state: AnalystSwarmState) -> dict:
 
         result = run_governor_agent(state["ticker"], agent_reports, save_to_file=True)
         if "error" in result:
-             raise Exception(result["error"])
+            raise Exception(result["error"])
 
         print("✅ Governor Agent completed")
         return {
             "governor_summary": result.get("summary_report", str(result)),
-            "governor_full_memo": result.get("detailed_report", "No detailed memo available."),
-            "governor_status": "success"
+            "governor_full_memo": result.get(
+                "detailed_report", "No detailed memo available."
+            ),
+            "governor_status": "success",
         }
     except Exception as e:
         print(f"❌ Governor Agent failed: {e}")
@@ -373,7 +387,7 @@ def governor_agent_node(state: AnalystSwarmState) -> dict:
             "governor_summary": error_msg,
             "governor_full_memo": error_msg,
             "governor_status": "failed",
-            "errors": [f"Governor Agent: {str(e)}"]
+            "errors": [f"Governor Agent: {str(e)}"],
         }
 
 
@@ -396,8 +410,10 @@ def risk_assessment_node(state: AnalystSwarmState) -> dict:
             print("✅ Risk Assessment Agent completed")
             return {
                 "risk_summary": result.get("summary_report", str(result)),
-                "risk_full_report": result.get("detailed_report", "No detailed report available."),
-                "risk_status": "success"
+                "risk_full_report": result.get(
+                    "detailed_report", "No detailed report available."
+                ),
+                "risk_status": "success",
             }
         else:
             skip_msg = "Skipped: Governor Agent failed or memo not available"
@@ -405,7 +421,7 @@ def risk_assessment_node(state: AnalystSwarmState) -> dict:
             return {
                 "risk_summary": skip_msg,
                 "risk_full_report": skip_msg,
-                "risk_status": "skipped"
+                "risk_status": "skipped",
             }
     except Exception as e:
         print(f"❌ Risk Assessment Agent failed: {e}")
@@ -414,16 +430,17 @@ def risk_assessment_node(state: AnalystSwarmState) -> dict:
             "risk_summary": error_msg,
             "risk_full_report": error_msg,
             "risk_status": "failed",
-            "errors": [f"Risk Assessment: {str(e)}"]
+            "errors": [f"Risk Assessment: {str(e)}"],
         }
 
 
 # --- WORKFLOW CONSTRUCTION ---
 
+
 def create_analyst_swarm_workflow() -> StateGraph:
     """Create the LangGraph workflow with retry-enabled agents."""
     from langgraph.graph import START
-    
+
     workflow = StateGraph(AnalystSwarmState)
     workflow.add_node("sec_agent", sec_agent_node)
     workflow.add_node("news_agent", news_agent_node)
@@ -446,7 +463,7 @@ def create_analyst_swarm_workflow() -> StateGraph:
     workflow.add_edge("social_agent", "governor")
     workflow.add_edge("chart_agent", "governor")
     workflow.add_edge("analyst_agent", "governor")
-    
+
     # Governor feeds into risk assessment, which ends
     workflow.add_edge("governor", "risk_assessment")
     workflow.add_edge("risk_assessment", END)
@@ -455,6 +472,7 @@ def create_analyst_swarm_workflow() -> StateGraph:
 
 
 # --- MAIN ORCHESTRATION FUNCTION ---
+
 
 def run_analyst_swarm(ticker: str, save_state: bool = True) -> AnalystSwarmState:
     """
@@ -474,11 +492,16 @@ def run_analyst_swarm(ticker: str, save_state: bool = True) -> AnalystSwarmState
     initial_state = AnalystSwarmState(
         ticker=ticker.upper(),
         timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        sec_agent_summary="", sec_agent_detailed="",
-        news_agent_summary="", news_agent_detailed="",
-        social_agent_summary="", social_agent_detailed="",
-        chart_agent_summary="", chart_agent_detailed="",
-        analyst_agent_summary="", analyst_agent_detailed="",
+        sec_agent_summary="",
+        sec_agent_detailed="",
+        news_agent_summary="",
+        news_agent_detailed="",
+        social_agent_summary="",
+        social_agent_detailed="",
+        chart_agent_summary="",
+        chart_agent_detailed="",
+        analyst_agent_summary="",
+        analyst_agent_detailed="",
         sec_agent_status="pending",
         news_agent_status="pending",
         social_agent_status="pending",
@@ -506,7 +529,7 @@ def run_analyst_swarm(ticker: str, save_state: bool = True) -> AnalystSwarmState
         workflow = create_analyst_swarm_workflow()
         app = workflow.compile()
         print("⚙️ Executing workflow with retry logic...\n")
-        
+
         final_state = app.invoke(initial_state)
 
         if final_state.get("errors"):
@@ -523,6 +546,7 @@ def run_analyst_swarm(ticker: str, save_state: bool = True) -> AnalystSwarmState
     except Exception as e:
         print(f"\n❌ WORKFLOW FAILED: {e}")
         import traceback
+
         traceback.print_exc()
         initial_state["workflow_status"] = "failed"
         initial_state["errors"].append(f"Workflow error: {str(e)}")
@@ -537,7 +561,7 @@ def save_workflow_state(
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"{ticker}_workflow_state_{timestamp}.json"
     filepath = os.path.join(output_dir, filename)
-    
+
     # Create a serializable copy
     state_dict = dict(state)
 
@@ -553,19 +577,52 @@ def print_workflow_summary(state: AnalystSwarmState):
     print("=" * 70)
     print("\n🤖 Agent Execution Status:")
     agents = [
-        ("SEC Agent", state.get("sec_agent_status"), state.get("sec_agent_attempts", 0)),
-        ("News Agent", state.get("news_agent_status"), state.get("news_agent_attempts", 0)),
-        ("Social Agent", state.get("social_agent_status"), state.get("social_agent_attempts", 0)),
-        ("Chart Agent", state.get("chart_agent_status"), state.get("chart_agent_attempts", 0)),
-        ("Analyst Agent", state.get("analyst_agent_status"), state.get("analyst_agent_attempts", 0)),
-        ("Governor Agent", state.get("governor_status"), state.get("governor_attempts", 0)),
+        (
+            "SEC Agent",
+            state.get("sec_agent_status"),
+            state.get("sec_agent_attempts", 0),
+        ),
+        (
+            "News Agent",
+            state.get("news_agent_status"),
+            state.get("news_agent_attempts", 0),
+        ),
+        (
+            "Social Agent",
+            state.get("social_agent_status"),
+            state.get("social_agent_attempts", 0),
+        ),
+        (
+            "Chart Agent",
+            state.get("chart_agent_status"),
+            state.get("chart_agent_attempts", 0),
+        ),
+        (
+            "Analyst Agent",
+            state.get("analyst_agent_status"),
+            state.get("analyst_agent_attempts", 0),
+        ),
+        (
+            "Governor Agent",
+            state.get("governor_status"),
+            state.get("governor_attempts", 0),
+        ),
         ("Risk Assessment", state.get("risk_status"), state.get("risk_attempts", 0)),
     ]
 
     total_attempts = 0
     for agent_name, status, attempts in agents:
-        status_emoji = {"success": "✅", "failed": "❌", "pending": "⏳", "skipped": "⏭️"}.get(status, "❓")
-        retry_info = (f"({attempts} attempt{'s' if attempts != 1 else ''})" if attempts > 1 else "")
+        status_emoji = {
+            "success": "✅",
+            "failed": "❌",
+            "pending": "⏳",
+            "skipped": "⏭️",
+        }.get(status, "❓")
+        retry_info = (
+            f"({attempts} attempt{'s' if attempts != 1 else ''})"
+            if attempts > 1
+            else ""
+        )
         print(f"  {status_emoji} {agent_name}: {status} {retry_info}")
         total_attempts += attempts
 
