@@ -1,0 +1,29 @@
+# Core Dependencies
+python-dotenv>=1.0.0
+
+# LangChain & LangGraph
+langchain>=0.2.0
+langchain-core>=0.2.0
+langchain-google-genai>=1.0.0
+langchain-google-community>=1.0.0
+langgraph>=0.1.0
+
+# Google APIs
+google-api-python-client>=2.100.0
+google-auth>=2.23.0
+google-auth-httplib2>=0.1.1
+google-auth-oauthlib>=1.1.0
+
+# Financial Data APIs
+finnhub-python>=2.4.18
+
+# Web Framework (for API server)
+flask>=3.0.0
+flask-cors>=4.0.0
+
+# Utilities
+requests>=2.31.0
+
+# Financial Data APIs
+yfinance==0.2.40
+requests==2.31.0

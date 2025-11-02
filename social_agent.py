@@ -86,6 +86,25 @@ social_search_tool = GoogleSearchAPIWrapper(
 
 # --- SEARCH LOGIC WITH CACHING ---
 
+# Ticker to company name mapping for better search results
+TICKER_TO_NAME = {
+    "TSLA": "Tesla",
+    "AAPL": "Apple",
+    "MSFT": "Microsoft",
+    "GOOGL": "Google",
+    "AMZN": "Amazon",
+    "META": "Meta Facebook",
+    "NVDA": "Nvidia",
+    "AMD": "AMD",
+    "COIN": "Coinbase",
+    "PLTR": "Palantir",
+    "GME": "GameStop",
+    "AMC": "AMC",
+    "SPY": "SPY S&P500",
+    "QQQ": "QQQ Nasdaq",
+}
+
+
 @lru_cache(maxsize=100)
 def cached_search(ticker: str, timestamp_hour: int) -> list:
     """
@@ -99,15 +118,19 @@ def cached_search(ticker: str, timestamp_hour: int) -> list:
     Returns:
         List of search result dictionaries with metadata
     """
-    # Optimized query for social sentiment
-    # Since CSE is pre-filtered to social sites, we can be more specific
-    query = f"{ticker} stock bullish bearish sentiment discussion"
+    # Get company name for better social media results
+    company_name = TICKER_TO_NAME.get(ticker, ticker)
     
-    print(f"🔍 Social_Agent: Searching social sentiment for {ticker}...")
+    # Optimized query: Use company name + ticker for best results
+    # Social media users typically use company names, not tickers
+    query = f"{company_name} {ticker} stock sentiment discussion"
+    
+    print(f"🔍 Social_Agent: Searching for '{query}'...")
     
     try:
         # Use .results() instead of .run() to get structured data
         results = social_search_tool.results(query, num_results=10)
+        print(f"📥 Retrieved {len(results)} results")
         return results
     except Exception as e:
         print(f"❌ Search API error: {e}")
@@ -124,14 +147,26 @@ def format_sources_for_llm(results: list) -> str:
     Returns:
         Formatted string with source citations
     """
-    formatted = ""
+    if not results:
+        return "No sources found."
+    
+    formatted = "Below are the social media sources found. Each source has a number, title, URL, and text snippet.\n\n"
+    
     for i, result in enumerate(results, 1):
-        formatted += f"\n{'='*60}\n"
+        title = result.get('title', 'No title')
+        url = result.get('link', 'No URL')
+        snippet = result.get('snippet', 'No snippet available')
+        
+        formatted += f"\n{'='*70}\n"
         formatted += f"SOURCE #{i}\n"
-        formatted += f"{'='*60}\n"
-        formatted += f"Title: {result.get('title', 'No title')}\n"
-        formatted += f"URL: {result.get('link', 'No URL')}\n"
-        formatted += f"Snippet:\n{result.get('snippet', 'No snippet available')}\n"
+        formatted += f"{'='*70}\n"
+        formatted += f"TITLE: {title}\n"
+        formatted += f"URL: {url}\n"
+        formatted += f"SNIPPET:\n{snippet}\n"
+    
+    formatted += f"\n{'='*70}\n"
+    formatted += f"END OF SOURCES (Total: {len(results)} sources)\n"
+    formatted += f"{'='*70}\n"
     
     return formatted
 
@@ -199,61 +234,70 @@ def run_search(input_dict: Dict[str, Any]) -> Dict[str, Any]:
 # --- DETAILED ANALYSIS PROMPT ---
 
 detailed_prompt_template = ChatPromptTemplate.from_template(
-    """You are an expert "Social-Sentimentalist" financial analyst. Your task is to 
-analyze the following collection of public forum snippets, search results, 
-and discussions about the stock ${ticker}.
+    """You are an expert "Social-Sentimentalist" financial analyst analyzing retail investor sentiment for ${ticker}.
 
-**CRITICAL INSTRUCTIONS:**
-1. Each SOURCE is numbered and includes a Title, URL, and Snippet
-2. You MUST cite specific SOURCE numbers when making claims
-3. You MUST quote actual text from the snippets (use exact phrases)
-4. Do NOT paraphrase - use the actual language from the sources
-5. Include the SOURCE URL in your analysis for each point
+**CRITICAL INSTRUCTIONS - READ CAREFULLY:**
 
-Provide a COMPREHENSIVE, DETAILED analysis that includes:
+You will receive sources formatted like this:
+======================================================================
+SOURCE #1
+======================================================================
+TITLE: [title here]
+URL: [url here]
+SNIPPET:
+[text here]
 
-1. **Executive Summary**: Overall sentiment and key takeaways (2-3 sentences)
-2. **Sentiment Breakdown**: Quantified sentiment with score and reasoning
-3. **Source-by-Source Analysis**: Analyze EACH numbered source individually with:
-   - Source number and URL
-   - Direct quotes from the snippet
-   - Sentiment of that specific source
-4. **Key Themes**: Identify and explain 3-5 recurring topics with direct quotes
-5. **Notable Quotes**: Extract 5-10 ACTUAL quotes (exact text) with source numbers
-6. **Risk Factors**: What concerns are mentioned (with source citations)
-7. **Catalysts**: What positive drivers are mentioned (with source citations)
-8. **Consensus View**: What is the crowd's general consensus
+For EVERY source, you MUST:
+1. Extract the EXACT title and URL provided
+2. Quote EXACT phrases from the snippet (use quotation marks)
+3. Cite the source number (e.g., "Source #3")
+4. Do NOT say "No title" or "No URL" - they are ALWAYS provided
+5. Do NOT make up or paraphrase - use the actual text
 
-Return your analysis in the following JSON format:
+**YOUR ANALYSIS MUST INCLUDE:**
+
+1. **Executive Summary**: 2-3 sentences covering overall sentiment
+2. **Source-by-Source Analysis**: For EACH numbered source:
+   - Copy the exact title
+   - Copy the exact URL
+   - Identify platform (reddit/twitter/stocktwits/seekingalpha from URL)
+   - Extract 2-3 direct quotes from the snippet
+   - State that source's sentiment
+3. **Key Themes**: 3-5 recurring topics with exact quotes and source numbers
+4. **Notable Quotes**: 5-10 EXACT quotes with source numbers
+5. **Risk Factors**: Concerns mentioned with source citations
+6. **Bullish Catalysts**: Positive drivers with source citations
+
+Return your analysis in this EXACT JSON format:
 {{
   "executive_summary": "2-3 sentence overview",
   "overall_sentiment": "Bullish" | "Bearish" | "Neutral",
-  "sentiment_score": 0.0,
-  "sentiment_reasoning": "Detailed explanation with source citations",
+  "sentiment_score": -1.0 to 1.0,
+  "sentiment_reasoning": "Explain with source numbers",
   "data_quality": "excellent" | "good" | "limited" | "insufficient",
   "source_analyses": [
     {{
       "source_number": 1,
-      "source_url": "full URL",
-      "source_title": "title of source",
+      "source_title": "EXACT title from source",
+      "source_url": "EXACT URL from source",
       "platform": "reddit" | "twitter" | "stocktwits" | "seekingalpha" | "other",
       "direct_quotes": ["exact quote 1", "exact quote 2"],
       "sentiment": "Bullish" | "Bearish" | "Neutral",
       "key_points": ["point 1", "point 2"],
-      "analysis": "Your interpretation of this source"
+      "analysis": "Your interpretation"
     }}
   ],
   "key_themes": [
     {{
       "theme": "Theme name",
-      "description": "What this theme is about",
+      "description": "Description",
       "sentiment": "Bullish" | "Bearish" | "Neutral",
       "prevalence": "high" | "medium" | "low",
       "supporting_quotes": [
         {{
-          "quote": "exact text",
+          "quote": "exact text from snippet",
           "source_number": 1,
-          "source_url": "URL"
+          "source_url": "exact URL"
         }}
       ]
     }}
@@ -262,7 +306,7 @@ Return your analysis in the following JSON format:
     {{
       "quote": "EXACT text from snippet",
       "source_number": 1,
-      "source_url": "URL",
+      "source_url": "exact URL",
       "sentiment": "Bullish" | "Bearish" | "Neutral"
     }}
   ],
@@ -294,36 +338,26 @@ Number of Sources: {result_count}
 {social_data}
 </social_data>
 
-Return *only* the JSON object, no additional text."""
+Return ONLY valid JSON. Do not include any text before or after the JSON object."""
 )
 
 
 # --- CREATE DETAILED ANALYSIS CHAIN ---
 
-detailed_chain = (
-    RunnablePassthrough.assign(search_results=run_search)
-    | RunnablePassthrough.assign(
-        ticker=lambda x: x["search_results"]["ticker"],
-        social_data=lambda x: x["search_results"]["social_data"],
-        raw_results=lambda x: x["search_results"]["raw_results"],
-        search_status=lambda x: x["search_results"]["search_status"],
-        result_count=lambda x: x["search_results"]["result_count"]
-    )
-    | detailed_prompt_template
-    | llm
-    | JsonOutputParser()
-)
+# This chain is now just the analysis part, not the search
+analysis_chain = detailed_prompt_template | llm | JsonOutputParser()
 
 
 # --- REPORT GENERATION ---
 
-def generate_detailed_report(ticker: str, analysis: Dict[str, Any]) -> str:
+def generate_detailed_report(ticker: str, analysis: Dict[str, Any], raw_results: list) -> str:
     """
     Generate a comprehensive markdown report from analysis results.
     
     Args:
         ticker: Stock ticker symbol
         analysis: Detailed analysis JSON from LLM
+        raw_results: The raw search results list, passed in for the index
     
     Returns:
         Formatted markdown report string
@@ -365,27 +399,31 @@ def generate_detailed_report(ticker: str, analysis: Dict[str, Any]) -> str:
 ## Source-by-Source Analysis
 """
     
-    # Add source analyses
     sources = analysis.get('source_analyses', [])
     if sources:
-        for i, source in enumerate(sources, 1):
+        for source in sources:
             report += f"""
-### Source {i}: {source.get('source_type', 'Unknown').capitalize()}
+### Source {source.get('source_number', 'N/A')}: {source.get('source_title', 'No Title')}
 
 **Sentiment:** {source.get('sentiment', 'N/A')}
+**Platform:** {source.get('platform', 'unknown').capitalize()}
+**URL:** {source.get('source_url', 'No URL')}
 
 **Key Points:**
 """
             for point in source.get('key_points', []):
                 report += f"- {point}\n"
             
-            report += f"\n**Discussion:** {source.get('discussion_snippet', 'No details available.')}\n"
+            report += f"\n**Direct Quotes:**\n"
+            for quote in source.get('direct_quotes', []):
+                report += f"- \"{quote}\"\n"
+            
+            report += f"\n**Analysis:** {source.get('analysis', 'No analysis available.')}\n"
     else:
         report += "\n*No individual sources could be analyzed.*\n"
     
     report += "\n---\n\n## Key Themes\n"
     
-    # Add key themes
     themes = analysis.get('key_themes', [])
     if themes:
         for theme in themes:
@@ -396,48 +434,47 @@ def generate_detailed_report(ticker: str, analysis: Dict[str, Any]) -> str:
 **Prevalence:** {theme.get('prevalence', 'unknown').capitalize()}
 
 {theme.get('description', 'No description available.')}
+
+**Supporting Quotes:**
 """
+            for quote in theme.get('supporting_quotes', []):
+                report += f"- \"{quote.get('quote')}\" (Source #{quote.get('source_number')})\n"
     else:
         report += "\n*No recurring themes identified.*\n"
     
     report += "\n---\n\n## Notable Quotes\n"
     
-    # Add notable quotes
     quotes = analysis.get('notable_quotes', [])
     if quotes:
         for quote in quotes:
             sentiment_emoji = {
-                'Bullish': '🟢',
-                'Bearish': '🔴',
-                'Neutral': '⚪'
+                'Bullish': '🟢', 'Bearish': '🔴', 'Neutral': '⚪'
             }.get(quote.get('sentiment', 'Neutral'), '⚪')
             
             report += f"""
-{sentiment_emoji} **{quote.get('sentiment', 'N/A')}**  
-> "{quote.get('quote', 'No quote available.')}"
-
-*Context:* {quote.get('context', 'No context provided.')}
+{sentiment_emoji} **{quote.get('sentiment', 'N/A')}** > "{quote.get('quote', 'No quote available.')}"
+*Source #{quote.get('source_number')} ({quote.get('source_url')})*
 """
     else:
         report += "\n*No notable quotes extracted.*\n"
     
     report += "\n---\n\n## Risk Factors & Concerns\n"
     
-    # Add risk factors
     risks = analysis.get('risk_factors', [])
     if risks:
         for risk in risks:
-            report += f"- {risk}\n"
+            report += f"- **{risk.get('risk', 'Unknown Risk')}** (Sources: {risk.get('source_numbers')})\n"
+            report += f"  > *\"{risk.get('supporting_quote', 'N/A')}\"*\n"
     else:
         report += "\n*No significant risk factors mentioned.*\n"
     
     report += "\n---\n\n## Bullish Catalysts & Drivers\n"
     
-    # Add catalysts
     catalysts = analysis.get('bullish_catalysts', [])
     if catalysts:
         for catalyst in catalysts:
-            report += f"- {catalyst}\n"
+            report += f"- **{catalyst.get('catalyst', 'Unknown Catalyst')}** (Sources: {catalyst.get('source_numbers')})\n"
+            report += f"  > *\"{catalyst.get('supporting_quote', 'N/A')}\"*\n"
     else:
         report += "\n*No bullish catalysts identified.*\n"
     
@@ -445,10 +482,26 @@ def generate_detailed_report(ticker: str, analysis: Dict[str, Any]) -> str:
 
 ---
 
+## Source Index
+
+Below are all the sources analyzed in this report:
+
+"""
+    
+    if raw_results:
+        for i, result in enumerate(raw_results, 1):
+            report += f"{i}. **{result.get('title', 'No title')}**\n"
+            report += f"   - URL: {result.get('link', 'No URL')}\n\n"
+    else:
+        report += "*No raw sources were provided to the report generator.*\n"
+
+    report += f"""
+---
+
 ## Metadata
 
 **Search Status:** {analysis.get('search_status', 'unknown')}  
-**Data Length:** {analysis.get('result_length', 0)} characters  
+**Number of Sources:** {analysis.get('result_count', 0)}  
 **Analysis Timestamp:** {timestamp}
 
 ---
@@ -457,7 +510,6 @@ def generate_detailed_report(ticker: str, analysis: Dict[str, Any]) -> str:
 """
     
     return report.strip()
-
 
 def save_report(ticker: str, report: str, output_dir: str = "reports") -> str:
     """
@@ -492,46 +544,61 @@ def save_report(ticker: str, report: str, output_dir: str = "reports") -> str:
 def run_social_agent(ticker: str, save_to_file: bool = True) -> tuple[str, str]:
     """
     Execute the Social-Sentimentalist Agent analysis.
-    
-    Args:
-        ticker: Stock ticker symbol (e.g., "AAPL", "TSLA")
-        save_to_file: Whether to save detailed report to file (default: True)
-    
-    Returns:
-        Tuple of (summary_report, detailed_report)
-    
-    Example:
-        >>> summary, detailed = run_social_agent("COIN")
-        >>> print(summary)
     """
     print(f"\n{'='*60}")
     print(f"🤖 Social-Sentimentalist Agent: Analyzing ${ticker}")
     print(f"{'='*60}\n")
     
     try:
-        # Execute the detailed analysis chain
-        analysis_json = detailed_chain.invoke({"ticker": ticker.upper()})
+        # --- FIX: Break the chain into search and analysis steps ---
         
+        # 1. Run the search part first to get results
+        print("Running search...")
+        search_output = run_search({"ticker": ticker.upper()})
+        
+        if search_output["search_status"] == "failed":
+            raise Exception(f"Search failed: {search_output['social_data']}")
+        
+        if search_output["search_status"] == "partial":
+            print(f"Warning: {search_output['social_data']}")
+
+        # Store raw_results locally so it's not lost
+        raw_results = search_output.get("raw_results", [])
+
+        # 2. Run the analysis part of the chain
+        print("Running analysis with LLM...")
+        # Pass the search_output dictionary as the input to the prompt
+        analysis_json = analysis_chain.invoke(search_output)
+        
+        # --- End of Fix ---
+
+        # Add search status metadata back into the final JSON for the report
+        # The LLM doesn't return these, so we add them back manually
+        analysis_json['search_status'] = search_output.get('search_status')
+        analysis_json['result_count'] = search_output.get('result_count')
+
         # Generate detailed report
-        detailed_report = generate_detailed_report(ticker, analysis_json)
+        # Now, raw_results is correctly passed
+        detailed_report = generate_detailed_report(ticker, analysis_json, raw_results)
         
         # Save to file if requested
         if save_to_file:
             save_report(ticker, detailed_report)
         
-        # Extract data for summary report
+        # Create summary report for console/orchestrator
         sentiment = analysis_json.get('overall_sentiment', 'N/A')
         score = analysis_json.get('sentiment_score', 0.0)
         quality = analysis_json.get('data_quality', 'unknown')
         exec_summary = analysis_json.get('executive_summary', 'No summary available.')
+        source_count = analysis_json.get('result_count', 0)
         
-        # Generate concise summary for console/API
         summary_report = f"""
 **Social-Sentimentalist Agent Summary: ${ticker}**
 
 📊 **Quick Overview**
 * **Sentiment:** {sentiment} ({score:+.2f})
 * **Data Quality:** {quality.capitalize()}
+* **Sources Analyzed:** {source_count}
 
 📝 **Executive Summary:**
 {exec_summary}
@@ -540,7 +607,7 @@ def run_social_agent(ticker: str, save_to_file: bool = True) -> tuple[str, str]:
 {analysis_json.get('consensus_view', 'See detailed report for full analysis.')}
 
 ---
-*Full detailed report saved to file*
+*Full detailed report with source citations saved to file*
 *Agent: Social-Sentimentalist | Model: Gemini Pro*
         """
         
@@ -549,24 +616,16 @@ def run_social_agent(ticker: str, save_to_file: bool = True) -> tuple[str, str]:
         
     except Exception as e:
         print(f"❌ Social_Agent: Chain execution failed - {e}")
+        import traceback
+        traceback.print_exc()
         
         error_report = f"""
 **Social-Sentimentalist Agent Report: ${ticker}**
 
 ⚠️ **Error:** Analysis could not be completed.
-
 **Details:** {str(e)}
-
-**Possible Causes:**
-* API rate limits exceeded
-* Network connectivity issues
-* Invalid ticker symbol
-* Insufficient search results
-
-**Recommendation:** Retry in a few minutes or check environment configuration.
-        """
+"""
         return error_report.strip(), error_report.strip()
-
 
 # --- CLI ENTRY POINT ---
 
