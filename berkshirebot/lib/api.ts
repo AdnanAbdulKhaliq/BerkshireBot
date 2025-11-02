@@ -1,4 +1,4 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 // Types
 export interface AgentResponse {
@@ -59,8 +59,8 @@ export async function runFullSequentialAnalysis(
   const results: Record<string, AgentResponse> = {};
 
   // Step 1: Run all 5 agents sequentially
-  const agents = ['sec', 'news', 'social', 'chart', 'analyst'];
-  
+  const agents = ["sec", "news", "social", "chart", "analyst"];
+
   for (const agentId of agents) {
     try {
       const result = await runSingleAgent(ticker, agentId);
@@ -72,8 +72,8 @@ export async function runFullSequentialAnalysis(
       results[agentId] = {
         ticker,
         agent: agentId,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        summary: `Failed to run ${agentId} agent`
+        error: error instanceof Error ? error.message : "Unknown error",
+        summary: `Failed to run ${agentId} agent`,
       };
       if (onAgentComplete) {
         onAgentComplete(agentId, results[agentId]);
@@ -91,9 +91,9 @@ export async function runFullSequentialAnalysis(
   } catch (error) {
     governorResult = {
       ticker,
-      agent: 'governor',
-      error: error instanceof Error ? error.message : 'Unknown error',
-      summary_report: 'Governor analysis failed'
+      agent: "governor",
+      error: error instanceof Error ? error.message : "Unknown error",
+      summary_report: "Governor analysis failed",
     };
     if (onGovernorComplete) {
       onGovernorComplete(governorResult);
@@ -110,9 +110,9 @@ export async function runFullSequentialAnalysis(
   } catch (error) {
     riskResult = {
       ticker,
-      agent: 'risk',
-      error: error instanceof Error ? error.message : 'Unknown error',
-      summary_report: 'Risk assessment failed'
+      agent: "risk",
+      error: error instanceof Error ? error.message : "Unknown error",
+      summary_report: "Risk assessment failed",
     };
     if (onRiskComplete) {
       onRiskComplete(riskResult);
@@ -122,22 +122,27 @@ export async function runFullSequentialAnalysis(
   return {
     agents: results,
     governor: governorResult,
-    risk: riskResult
+    risk: riskResult,
   };
 }
 
 // Individual agent runners
-export async function runSingleAgent(ticker: string, agentId: string): Promise<AgentResponse> {
+export async function runSingleAgent(
+  ticker: string,
+  agentId: string
+): Promise<AgentResponse> {
   const response = await fetch(`${API_BASE_URL}/api/agents/${agentId}`, {
-    method: 'POST',
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
     },
     body: JSON.stringify({ ticker: ticker.toUpperCase() }),
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: `${agentId} agent failed` }));
+    const error = await response
+      .json()
+      .catch(() => ({ detail: `${agentId} agent failed` }));
     throw new Error(error.detail || `Failed to run ${agentId} agent`);
   }
 
@@ -149,23 +154,30 @@ export async function runGovernorWithAgentResults(
   agentResults: Record<string, AgentResponse>
 ): Promise<GovernorResponse> {
   const response = await fetch(`${API_BASE_URL}/api/agents/governor`, {
-    method: 'POST',
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
     },
     body: JSON.stringify({
       ticker: ticker.toUpperCase(),
-      sec_summary: agentResults.sec?.summary || agentResults.sec?.summary_report,
-      news_summary: agentResults.news?.summary || agentResults.news?.summary_report,
-      social_summary: agentResults.social?.summary || agentResults.social?.summary_report,
-      chart_summary: agentResults.chart?.summary || agentResults.chart?.summary_report,
-      analyst_summary: agentResults.analyst?.summary || agentResults.analyst?.summary_report,
+      sec_summary:
+        agentResults.sec?.summary || agentResults.sec?.summary_report,
+      news_summary:
+        agentResults.news?.summary || agentResults.news?.summary_report,
+      social_summary:
+        agentResults.social?.summary || agentResults.social?.summary_report,
+      chart_summary:
+        agentResults.chart?.summary || agentResults.chart?.summary_report,
+      analyst_summary:
+        agentResults.analyst?.summary || agentResults.analyst?.summary_report,
     }),
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: 'Governor agent failed' }));
-    throw new Error(error.detail || 'Failed to run governor agent');
+    const error = await response
+      .json()
+      .catch(() => ({ detail: "Governor agent failed" }));
+    throw new Error(error.detail || "Failed to run governor agent");
   }
 
   return response.json();
@@ -176,23 +188,30 @@ export async function runRiskWithAgentResults(
   agentResults: Record<string, AgentResponse>
 ): Promise<RiskResponse> {
   const response = await fetch(`${API_BASE_URL}/api/agents/risk`, {
-    method: 'POST',
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
     },
     body: JSON.stringify({
       ticker: ticker.toUpperCase(),
-      sec_summary: agentResults.sec?.summary || agentResults.sec?.summary_report,
-      news_summary: agentResults.news?.summary || agentResults.news?.summary_report,
-      social_summary: agentResults.social?.summary || agentResults.social?.summary_report,
-      chart_summary: agentResults.chart?.summary || agentResults.chart?.summary_report,
-      analyst_summary: agentResults.analyst?.summary || agentResults.analyst?.summary_report,
+      sec_summary:
+        agentResults.sec?.summary || agentResults.sec?.summary_report,
+      news_summary:
+        agentResults.news?.summary || agentResults.news?.summary_report,
+      social_summary:
+        agentResults.social?.summary || agentResults.social?.summary_report,
+      chart_summary:
+        agentResults.chart?.summary || agentResults.chart?.summary_report,
+      analyst_summary:
+        agentResults.analyst?.summary || agentResults.analyst?.summary_report,
     }),
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: 'Risk agent failed' }));
-    throw new Error(error.detail || 'Failed to run risk agent');
+    const error = await response
+      .json()
+      .catch(() => ({ detail: "Risk agent failed" }));
+    throw new Error(error.detail || "Failed to run risk agent");
   }
 
   return response.json();
@@ -214,20 +233,22 @@ export async function runMCRollout(
   sims: number = 1000
 ): Promise<MCRolloutResponse> {
   const response = await fetch(`${API_BASE_URL}/api/mc_rollout`, {
-    method: 'POST',
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
     },
-    body: JSON.stringify({ 
+    body: JSON.stringify({
       ticker: ticker.toUpperCase(),
       t,
-      sims
+      sims,
     }),
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: 'MC Rollout failed' }));
-    throw new Error(error.detail || 'Failed to run Monte Carlo simulation');
+    const error = await response
+      .json()
+      .catch(() => ({ detail: "MC Rollout failed" }));
+    throw new Error(error.detail || "Failed to run Monte Carlo simulation");
   }
 
   return response.json();
@@ -284,11 +305,14 @@ export async function getNewsAgentData(
 }
 
 // Health check
-export async function checkHealth(): Promise<{ status: string; service: string }> {
+export async function checkHealth(): Promise<{
+  status: string;
+  service: string;
+}> {
   const response = await fetch(`${API_BASE_URL}/api/health`);
 
   if (!response.ok) {
-    throw new Error('Health check failed');
+    throw new Error("Health check failed");
   }
 
   return response.json();

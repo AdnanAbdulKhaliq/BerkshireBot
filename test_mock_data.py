@@ -16,7 +16,9 @@ for ticker in tickers:
         print(f"   ✅ Success!")
         print(f"   📊 Current price: ${result['median'][0]:.2f}")
         print(f"   📈 30-day forecast (median): ${result['median'][-1]:.2f}")
-        print(f"   📉 Expected range: ${result['lower'][-1]:.2f} - ${result['upper'][-1]:.2f}")
+        print(
+            f"   📉 Expected range: ${result['lower'][-1]:.2f} - ${result['upper'][-1]:.2f}"
+        )
     except Exception as e:
         print(f"   ❌ Failed: {str(e)}")
 
@@ -36,9 +38,15 @@ for ticker in tickers:
             print(f"   ✅ Success!")
             analyst_info = data.get("analyst_info", {})
             if analyst_info:
-                print(f"   💰 Current Price: ${analyst_info.get('currentPrice', 'N/A')}")
-                print(f"   🎯 Target Mean: ${analyst_info.get('targetMeanPrice', 'N/A')}")
-                print(f"   📈 Recommendation: {analyst_info.get('recommendationKey', 'N/A')}")
+                print(
+                    f"   💰 Current Price: ${analyst_info.get('currentPrice', 'N/A')}"
+                )
+                print(
+                    f"   🎯 Target Mean: ${analyst_info.get('targetMeanPrice', 'N/A')}"
+                )
+                print(
+                    f"   📈 Recommendation: {analyst_info.get('recommendationKey', 'N/A')}"
+                )
     except Exception as e:
         print(f"   ❌ Failed: {str(e)}")
 

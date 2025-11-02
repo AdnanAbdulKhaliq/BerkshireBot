@@ -40,14 +40,16 @@ MOCK_ANALYST_DATA = {
         "targetMeanPrice": 195.50,
         "targetMedianPrice": 195.00,
         "currentPrice": 178.50,
-        "recommendations": pd.DataFrame({
-            "period": ["0m", "-1m", "-2m", "-3m"],
-            "strongBuy": [18, 17, 16, 15],
-            "buy": [15, 16, 17, 18],
-            "hold": [7, 7, 7, 8],
-            "sell": [2, 2, 2, 1],
-            "strongSell": [0, 0, 0, 0],
-        }),
+        "recommendations": pd.DataFrame(
+            {
+                "period": ["0m", "-1m", "-2m", "-3m"],
+                "strongBuy": [18, 17, 16, 15],
+                "buy": [15, 16, 17, 18],
+                "hold": [7, 7, 7, 8],
+                "sell": [2, 2, 2, 1],
+                "strongSell": [0, 0, 0, 0],
+            }
+        ),
     },
     "TSLA": {
         "recommendationKey": "hold",
@@ -57,14 +59,16 @@ MOCK_ANALYST_DATA = {
         "targetMeanPrice": 255.00,
         "targetMedianPrice": 250.00,
         "currentPrice": 242.80,
-        "recommendations": pd.DataFrame({
-            "period": ["0m", "-1m", "-2m", "-3m"],
-            "strongBuy": [8, 7, 8, 9],
-            "buy": [12, 13, 12, 11],
-            "hold": [14, 14, 15, 15],
-            "sell": [3, 3, 2, 2],
-            "strongSell": [1, 1, 1, 1],
-        }),
+        "recommendations": pd.DataFrame(
+            {
+                "period": ["0m", "-1m", "-2m", "-3m"],
+                "strongBuy": [8, 7, 8, 9],
+                "buy": [12, 13, 12, 11],
+                "hold": [14, 14, 15, 15],
+                "sell": [3, 3, 2, 2],
+                "strongSell": [1, 1, 1, 1],
+            }
+        ),
     },
     "NVDA": {
         "recommendationKey": "buy",
@@ -74,14 +78,16 @@ MOCK_ANALYST_DATA = {
         "targetMeanPrice": 595.00,
         "targetMedianPrice": 600.00,
         "currentPrice": 485.20,
-        "recommendations": pd.DataFrame({
-            "period": ["0m", "-1m", "-2m", "-3m"],
-            "strongBuy": [22, 21, 20, 19],
-            "buy": [16, 17, 18, 19],
-            "hold": [6, 6, 6, 6],
-            "sell": [1, 1, 1, 1],
-            "strongSell": [0, 0, 0, 0],
-        }),
+        "recommendations": pd.DataFrame(
+            {
+                "period": ["0m", "-1m", "-2m", "-3m"],
+                "strongBuy": [22, 21, 20, 19],
+                "buy": [16, 17, 18, 19],
+                "hold": [6, 6, 6, 6],
+                "sell": [1, 1, 1, 1],
+                "strongSell": [0, 0, 0, 0],
+            }
+        ),
     },
 }
 
@@ -89,93 +95,102 @@ MOCK_ANALYST_DATA = {
 def generate_mock_price_history(ticker: str, days: int = 504) -> pd.DataFrame:
     """
     Generate mock historical price data for a ticker.
-    
+
     Args:
         ticker: Stock ticker symbol (AAPL, TSLA, or NVDA)
         days: Number of days of historical data (default: 504 = ~2 years)
-    
+
     Returns:
         DataFrame with columns: Close, Open, High, Low, Volume
     """
     if ticker not in MOCK_PRICE_DATA:
         raise ValueError(f"Mock data not available for ticker: {ticker}")
-    
+
     data = MOCK_PRICE_DATA[ticker]
-    
+
     # Generate dates
     end_date = datetime.now()
     dates = [end_date - timedelta(days=i) for i in range(days)]
     dates.reverse()
-    
+
     # Generate price path using geometric Brownian motion
     np.random.seed(hash(ticker) % 2**32)  # Deterministic but different per ticker
-    
-    dt = 1/252  # Daily time step (252 trading days per year)
+
+    dt = 1 / 252  # Daily time step (252 trading days per year)
     mu = data["drift"]
     sigma = data["volatility"]
-    
+
     # Generate returns
-    returns = np.random.normal(
-        (mu - 0.5 * sigma**2) * dt,
-        sigma * np.sqrt(dt),
-        days
-    )
-    
+    returns = np.random.normal((mu - 0.5 * sigma**2) * dt, sigma * np.sqrt(dt), days)
+
     # Generate price path
     price_multipliers = np.exp(np.cumsum(returns))
-    
+
     # Scale to match start and end prices
-    scale_factor = (data["current_price"] - data["start_price"]) / (price_multipliers[-1] - price_multipliers[0])
-    prices = data["start_price"] + (price_multipliers - price_multipliers[0]) * scale_factor
-    
+    scale_factor = (data["current_price"] - data["start_price"]) / (
+        price_multipliers[-1] - price_multipliers[0]
+    )
+    prices = (
+        data["start_price"] + (price_multipliers - price_multipliers[0]) * scale_factor
+    )
+
     # Ensure final price matches current price
     prices = prices * (data["current_price"] / prices[-1])
-    
+
     # Generate OHLC data
     close_prices = prices
     open_prices = close_prices * (1 + np.random.normal(0, 0.005, days))
-    high_prices = np.maximum(open_prices, close_prices) * (1 + np.abs(np.random.normal(0, 0.01, days)))
-    low_prices = np.minimum(open_prices, close_prices) * (1 - np.abs(np.random.normal(0, 0.01, days)))
-    volumes = np.random.lognormal(17, 0.5, days).astype(int)  # Realistic volume distribution
-    
+    high_prices = np.maximum(open_prices, close_prices) * (
+        1 + np.abs(np.random.normal(0, 0.01, days))
+    )
+    low_prices = np.minimum(open_prices, close_prices) * (
+        1 - np.abs(np.random.normal(0, 0.01, days))
+    )
+    volumes = np.random.lognormal(17, 0.5, days).astype(
+        int
+    )  # Realistic volume distribution
+
     # Create DataFrame
-    df = pd.DataFrame({
-        'Close': close_prices,
-        'Open': open_prices,
-        'High': high_prices,
-        'Low': low_prices,
-        'Volume': volumes
-    }, index=dates)
-    
-    df.index.name = 'Date'
-    
+    df = pd.DataFrame(
+        {
+            "Close": close_prices,
+            "Open": open_prices,
+            "High": high_prices,
+            "Low": low_prices,
+            "Volume": volumes,
+        },
+        index=dates,
+    )
+
+    df.index.name = "Date"
+
     return df
 
 
 def get_mock_analyst_data(ticker: str) -> dict:
     """
     Get mock analyst data for a ticker.
-    
+
     Args:
         ticker: Stock ticker symbol (AAPL, TSLA, or NVDA)
-    
+
     Returns:
         Dictionary with analyst information
     """
     if ticker not in MOCK_ANALYST_DATA:
         raise ValueError(f"Mock analyst data not available for ticker: {ticker}")
-    
+
     return MOCK_ANALYST_DATA[ticker].copy()
 
 
 class MockTicker:
     """Mock yfinance Ticker object"""
-    
+
     def __init__(self, ticker: str):
         self.ticker = ticker.upper()
         if self.ticker not in MOCK_PRICE_DATA:
             raise ValueError(f"Mock data not available for ticker: {self.ticker}")
-    
+
     def history(self, period: str = "2y", auto_adjust: bool = True):
         """Return mock historical data"""
         # Convert period to days
@@ -187,9 +202,9 @@ class MockTicker:
             days = 1260
         else:
             days = 504  # Default to 2 years
-        
+
         return generate_mock_price_history(self.ticker, days)
-    
+
     @property
     def info(self):
         """Return mock ticker info"""
@@ -204,24 +219,29 @@ class MockTicker:
             "recommendationKey": analyst_data["recommendationKey"],
             "numberOfAnalystOpinions": analyst_data["numberOfAnalystOpinions"],
         }
-    
+
     @property
     def recommendations(self):
         """Return mock recommendations"""
         analyst_data = get_mock_analyst_data(self.ticker)
         return analyst_data["recommendations"]
-    
+
     @property
     def upgrades_downgrades(self):
         """Return mock upgrades/downgrades data"""
         from datetime import datetime, timedelta
-        
+
         # Generate some recent upgrades/downgrades with dates as index
-        dates = [datetime.now() - timedelta(days=i*7) for i in range(4)]
-        
+        dates = [datetime.now() - timedelta(days=i * 7) for i in range(4)]
+
         if self.ticker == "AAPL":
             data = {
-                "Firm": ["Morgan Stanley", "Goldman Sachs", "JP Morgan", "Bank of America"],
+                "Firm": [
+                    "Morgan Stanley",
+                    "Goldman Sachs",
+                    "JP Morgan",
+                    "Bank of America",
+                ],
                 "ToGrade": ["Overweight", "Buy", "Overweight", "Buy"],
                 "FromGrade": ["Equal-Weight", "Neutral", "Equal-Weight", "Neutral"],
                 "Action": ["up", "up", "up", "up"],
@@ -240,7 +260,7 @@ class MockTicker:
                 "FromGrade": ["Equal-Weight", "Neutral", "Neutral", "Neutral"],
                 "Action": ["up", "up", "up", "up"],
             }
-        
+
         df = pd.DataFrame(data, index=dates)
         df.index.name = "GradeDate"
         return df
@@ -252,6 +272,7 @@ def use_mock_data() -> bool:
     Set environment variable USE_MOCK_YFINANCE=1 to force mock data.
     """
     import os
+
     return os.getenv("USE_MOCK_YFINANCE", "1") == "1"
 
 

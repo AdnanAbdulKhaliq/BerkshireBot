@@ -254,6 +254,7 @@ def fetch_yahoo_finance_data(ticker: str) -> Dict[str, Any]:
         # Try to use mock data first
         try:
             from mock_yfinance_data import MockTicker, use_mock_data
+
             if use_mock_data():
                 print(f"Using mock analyst data for {ticker}")
                 stock = MockTicker(ticker)

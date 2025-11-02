@@ -25,7 +25,7 @@ def MC_sims(ticker: str, t: int, sims: int, display: bool = False) -> np.ndarray
             ticker_obj = MockTicker(ticker)
         else:
             ticker_obj = yf.Ticker(ticker)
-        
+
         data = ticker_obj.history(period="2y", auto_adjust=True)
         time.sleep(0.1)
     except Exception as e:
@@ -35,7 +35,9 @@ def MC_sims(ticker: str, t: int, sims: int, display: bool = False) -> np.ndarray
             ticker_obj = MockTicker(ticker)
             data = ticker_obj.history(period="2y", auto_adjust=True)
         except Exception as mock_error:
-            raise ValueError(f"Failed to get data for ticker {ticker}: {str(mock_error)}")
+            raise ValueError(
+                f"Failed to get data for ticker {ticker}: {str(mock_error)}"
+            )
 
     if data is None or data.empty:
         raise ValueError(

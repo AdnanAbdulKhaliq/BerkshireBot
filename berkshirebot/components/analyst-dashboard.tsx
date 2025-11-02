@@ -52,23 +52,29 @@ import {
 } from "@/lib/api";
 
 const AGENTS = [
-  { id: 'sec', name: 'SEC Agent', icon: '📋', color: 'bg-blue-500' },
-  { id: 'news', name: 'News Agent', icon: '📰', color: 'bg-green-500' },
-  { id: 'social', name: 'Social Agent', icon: '💬', color: 'bg-purple-500' },
-  { id: 'analyst', name: 'Analyst Agent', icon: '🔍', color: 'bg-red-500' },
-]
+  { id: "sec", name: "SEC Agent", icon: "📋", color: "bg-blue-500" },
+  { id: "news", name: "News Agent", icon: "📰", color: "bg-green-500" },
+  { id: "social", name: "Social Agent", icon: "💬", color: "bg-purple-500" },
+  { id: "analyst", name: "Analyst Agent", icon: "🔍", color: "bg-red-500" },
+];
 
-type AgentStatus = 'idle' | 'running' | 'success' | 'error'
+type AgentStatus = "idle" | "running" | "success" | "error";
 
 interface AgentState {
-  id: string
-  name: string
-  status: AgentStatus
-  data: AgentResponse | null
-  loading: boolean
+  id: string;
+  name: string;
+  status: AgentStatus;
+  data: AgentResponse | null;
+  loading: boolean;
 }
 
-type Recommendation = 'STRONG_BUY' | 'BUY' | 'HOLD' | 'SELL' | 'STRONG_SELL' | null
+type Recommendation =
+  | "STRONG_BUY"
+  | "BUY"
+  | "HOLD"
+  | "SELL"
+  | "STRONG_SELL"
+  | null;
 
 // Mock data for stock price chart (you can replace this with real data later)
 const stockData = [
@@ -180,57 +186,66 @@ function determineSentiment(
 }
 
 function extractKeyPoints(detailedReport: string | undefined): string[] {
-  if (!detailedReport) return []
-  
-  const lines = detailedReport.split('\n')
-  const points: string[] = []
-  
+  if (!detailedReport) return [];
+
+  const lines = detailedReport.split("\n");
+  const points: string[] = [];
+
   for (const line of lines) {
-    const trimmed = line.trim()
+    const trimmed = line.trim();
     // Match markdown bullets, numbered lists, or lines starting with **
-    if (trimmed.startsWith('- ') || trimmed.startsWith('• ') || 
-        trimmed.startsWith('* ') || /^\d+\./.test(trimmed) ||
-        (trimmed.startsWith('**') && trimmed.length > 10)) {
+    if (
+      trimmed.startsWith("- ") ||
+      trimmed.startsWith("• ") ||
+      trimmed.startsWith("* ") ||
+      /^\d+\./.test(trimmed) ||
+      (trimmed.startsWith("**") && trimmed.length > 10)
+    ) {
       let point = trimmed
-        .replace(/^[-•*]\s*/, '')
-        .replace(/^\d+\.\s*/, '')
-        .replace(/^\*\*(.*?)\*\*:?/, '$1')
-        .trim()
-      
+        .replace(/^[-•*]\s*/, "")
+        .replace(/^\d+\.\s*/, "")
+        .replace(/^\*\*(.*?)\*\*:?/, "$1")
+        .trim();
+
       if (point && point.length > 10) {
-        points.push(point)
+        points.push(point);
       }
     }
-    if (points.length >= 6) break
+    if (points.length >= 6) break;
   }
-  
-  return points
+
+  return points;
 }
 
 function getRecommendationColor(riskScore: number | undefined): string {
-  if (!riskScore) return ''
-  if (riskScore < 25) return 'bg-green-600 text-white'
-  if (riskScore < 40) return 'bg-green-500 text-white'
-  if (riskScore < 60) return 'bg-yellow-500 text-black'
-  if (riskScore < 75) return 'bg-red-500 text-white'
-  return 'bg-red-600 text-white'
+  if (!riskScore) return "";
+  if (riskScore < 25) return "bg-green-600 text-white";
+  if (riskScore < 40) return "bg-green-500 text-white";
+  if (riskScore < 60) return "bg-yellow-500 text-black";
+  if (riskScore < 75) return "bg-red-500 text-white";
+  return "bg-red-600 text-white";
 }
 
 function getRecommendation(riskScore: number | undefined): Recommendation {
-  if (!riskScore) return null
-  if (riskScore < 25) return 'STRONG_BUY'
-  if (riskScore < 40) return 'BUY'
-  if (riskScore < 60) return 'HOLD'
-  if (riskScore < 75) return 'SELL'
-  return 'STRONG_SELL'
+  if (!riskScore) return null;
+  if (riskScore < 25) return "STRONG_BUY";
+  if (riskScore < 40) return "BUY";
+  if (riskScore < 60) return "HOLD";
+  if (riskScore < 75) return "SELL";
+  return "STRONG_SELL";
 }
 
 function getSummary(data: AgentResponse | null): string {
-  if (!data) return 'Not yet analyzed'
-  if (data.error) return data.error
+  if (!data) return "Not yet analyzed";
+  if (data.error) return data.error;
   // Check for different summary field names from different agents
-  const anyData = data as any
-  return data.summary || data.summary_report || anyData.dashboard_summary || 'No summary available'
+  const anyData = data as any;
+  return (
+    data.summary ||
+    data.summary_report ||
+    anyData.dashboard_summary ||
+    "No summary available"
+  );
 }
 
 function formatTimeAgo(dateString: string): string {
@@ -282,27 +297,35 @@ function convertNewsToDisplay(
 export function AnalystDashboard() {
   const [ticker, setTicker] = useState("TSLA");
   const [loading, setLoading] = useState(false);
-  const [analysisRunning, setAnalysisRunning] = useState(false)
-  const [currentStep, setCurrentStep] = useState<string>("")
+  const [analysisRunning, setAnalysisRunning] = useState(false);
+  const [currentStep, setCurrentStep] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
-  
+
   const [agentStates, setAgentStates] = useState<Record<string, AgentState>>(
     Object.fromEntries(
-      AGENTS.map(agent => [
+      AGENTS.map((agent) => [
         agent.id,
-        { id: agent.id, name: agent.name, status: 'idle' as AgentStatus, data: null, loading: false }
+        {
+          id: agent.id,
+          name: agent.name,
+          status: "idle" as AgentStatus,
+          data: null,
+          loading: false,
+        },
       ])
     )
-  )
-  
-  const [governorData, setGovernorData] = useState<GovernorResponse | null>(null)
-  const [riskData, setRiskData] = useState<RiskResponse | null>(null)
-  const [recommendation, setRecommendation] = useState<Recommendation>(null)
-  
-  const [selectedAgent, setSelectedAgent] = useState<AgentState | null>(null)
-  const [showGovernorDialog, setShowGovernorDialog] = useState(false)
-  const [showRiskDialog, setShowRiskDialog] = useState(false)
-  
+  );
+
+  const [governorData, setGovernorData] = useState<GovernorResponse | null>(
+    null
+  );
+  const [riskData, setRiskData] = useState<RiskResponse | null>(null);
+  const [recommendation, setRecommendation] = useState<Recommendation>(null);
+
+  const [selectedAgent, setSelectedAgent] = useState<AgentState | null>(null);
+  const [showGovernorDialog, setShowGovernorDialog] = useState(false);
+  const [showRiskDialog, setShowRiskDialog] = useState(false);
+
   const [newsArticles, setNewsArticles] = useState<DisplayNewsArticle[]>([]);
   const [selectedNews, setSelectedNews] = useState<DisplayNewsArticle | null>(
     null
@@ -321,13 +344,18 @@ export function AnalystDashboard() {
     setAnalysisRunning(true);
     setError(null);
     setRecommendation(null);
-    
+
     // Reset agent states
-    setAgentStates(prev => 
+    setAgentStates((prev) =>
       Object.fromEntries(
         Object.entries(prev).map(([id, state]) => [
           id,
-          { ...state, status: 'idle' as AgentStatus, data: null, loading: false }
+          {
+            ...state,
+            status: "idle" as AgentStatus,
+            data: null,
+            loading: false,
+          },
         ])
       )
     );
@@ -336,18 +364,20 @@ export function AnalystDashboard() {
 
     try {
       // Run Monte Carlo and News in parallel with full sequential analysis
-      const mcPromise = runMCRollout(ticker, 30, 1000).then(mcResult => {
+      const mcPromise = runMCRollout(ticker, 30, 1000).then((mcResult) => {
         if (mcResult.status === "success" && mcResult.forecast) {
-          const chartData = mcResult.forecast.map((price: number, index: number) => ({
-            day: index + 1,
-            price: price,
-          }));
+          const chartData = mcResult.forecast.map(
+            (price: number, index: number) => ({
+              day: index + 1,
+              price: price,
+            })
+          );
           setMcData(chartData);
         }
         setMcLoading(false);
       });
 
-      const newsPromise = getNewsAgentData(ticker).then(newsData => {
+      const newsPromise = getNewsAgentData(ticker).then((newsData) => {
         setNewsArticles(convertNewsToDisplay(newsData));
       });
 
@@ -355,25 +385,25 @@ export function AnalystDashboard() {
       const analysisPromise = runFullSequentialAnalysis(
         ticker,
         (agentId, result) => {
-          setAgentStates(prev => ({
+          setAgentStates((prev) => ({
             ...prev,
             [agentId]: {
               ...prev[agentId],
-              status: result.error ? 'error' : 'success',
+              status: result.error ? "error" : "success",
               data: result,
-              loading: false
-            }
+              loading: false,
+            },
           }));
           setCurrentStep(`Completed: ${agentId} agent`);
         },
         (result) => {
           setGovernorData(result);
-          setCurrentStep('Completed: Governor synthesis');
+          setCurrentStep("Completed: Governor synthesis");
         },
         (result) => {
           setRiskData(result);
-          setCurrentStep('Completed: Risk assessment');
-          
+          setCurrentStep("Completed: Risk assessment");
+
           const rec = getRecommendation(result.overall_risk_score);
           setRecommendation(rec);
         }
@@ -381,8 +411,8 @@ export function AnalystDashboard() {
 
       // Wait for all operations to complete
       await Promise.all([mcPromise, newsPromise, analysisPromise]);
-      
-      setCurrentStep('Analysis complete!');
+
+      setCurrentStep("Analysis complete!");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Analysis failed");
     } finally {
@@ -393,100 +423,105 @@ export function AnalystDashboard() {
 
   const handleFullAnalysis = async () => {
     if (!ticker.trim()) {
-      setError('Please enter a ticker symbol')
-      return
+      setError("Please enter a ticker symbol");
+      return;
     }
 
-    setAnalysisRunning(true)
-    setError(null)
-    setRecommendation(null)
-    
-    setAgentStates(prev => 
+    setAnalysisRunning(true);
+    setError(null);
+    setRecommendation(null);
+
+    setAgentStates((prev) =>
       Object.fromEntries(
         Object.entries(prev).map(([id, state]) => [
           id,
-          { ...state, status: 'idle' as AgentStatus, data: null, loading: false }
+          {
+            ...state,
+            status: "idle" as AgentStatus,
+            data: null,
+            loading: false,
+          },
         ])
       )
-    )
-    setGovernorData(null)
-    setRiskData(null)
+    );
+    setGovernorData(null);
+    setRiskData(null);
 
     try {
       await runFullSequentialAnalysis(
         ticker,
         (agentId, result) => {
-          setAgentStates(prev => ({
+          setAgentStates((prev) => ({
             ...prev,
             [agentId]: {
               ...prev[agentId],
-              status: result.error ? 'error' : 'success',
+              status: result.error ? "error" : "success",
               data: result,
-              loading: false
-            }
-          }))
-          setCurrentStep(`Completed: ${agentId} agent`)
+              loading: false,
+            },
+          }));
+          setCurrentStep(`Completed: ${agentId} agent`);
         },
         (result) => {
-          setGovernorData(result)
-          setCurrentStep('Completed: Governor synthesis')
+          setGovernorData(result);
+          setCurrentStep("Completed: Governor synthesis");
         },
         (result) => {
-          setRiskData(result)
-          setCurrentStep('Completed: Risk assessment')
-          
-          const rec = getRecommendation(result.overall_risk_score)
-          setRecommendation(rec)
+          setRiskData(result);
+          setCurrentStep("Completed: Risk assessment");
+
+          const rec = getRecommendation(result.overall_risk_score);
+          setRecommendation(rec);
         }
-      )
-      
-      setCurrentStep('Analysis complete!')
+      );
+
+      setCurrentStep("Analysis complete!");
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Analysis failed')
+      setError(err instanceof Error ? err.message : "Analysis failed");
     } finally {
-      setAnalysisRunning(false)
+      setAnalysisRunning(false);
     }
-  }
+  };
 
   const handleRunSingleAgent = async (agentId: string) => {
     if (!ticker.trim()) {
-      setError('Please enter a ticker symbol')
-      return
+      setError("Please enter a ticker symbol");
+      return;
     }
 
-    setAgentStates(prev => ({
+    setAgentStates((prev) => ({
       ...prev,
-      [agentId]: { ...prev[agentId], loading: true, status: 'running' }
-    }))
-    setError(null)
+      [agentId]: { ...prev[agentId], loading: true, status: "running" },
+    }));
+    setError(null);
 
     try {
-      const result = await runSingleAgent(ticker, agentId)
-      setAgentStates(prev => ({
+      const result = await runSingleAgent(ticker, agentId);
+      setAgentStates((prev) => ({
         ...prev,
         [agentId]: {
           ...prev[agentId],
-          status: result.error ? 'error' : 'success',
+          status: result.error ? "error" : "success",
           data: result,
-          loading: false
-        }
-      }))
+          loading: false,
+        },
+      }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Agent run failed')
-      setAgentStates(prev => ({
+      setError(err instanceof Error ? err.message : "Agent run failed");
+      setAgentStates((prev) => ({
         ...prev,
-        [agentId]: { 
-          ...prev[agentId], 
-          loading: false, 
-          status: 'error',
+        [agentId]: {
+          ...prev[agentId],
+          loading: false,
+          status: "error",
           data: {
             ticker,
             agent: agentId,
-            error: err instanceof Error ? err.message : 'Unknown error',
-            summary: `Failed to run ${agentId} agent`
-          }
-        }
-      }))
+            error: err instanceof Error ? err.message : "Unknown error",
+            summary: `Failed to run ${agentId} agent`,
+          },
+        },
+      }));
     }
   };
 
@@ -684,10 +719,10 @@ export function AnalystDashboard() {
         <CardContent>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {AGENTS.map((agent) => {
-              const state = agentStates[agent.id]
-              const summary = getSummary(state.data)
-              const sentiment = determineSentiment(summary)
-              const score = calculateSentimentScore(summary)
+              const state = agentStates[agent.id];
+              const summary = getSummary(state.data);
+              const sentiment = determineSentiment(summary);
+              const score = calculateSentimentScore(summary);
 
               return (
                 <div
@@ -695,19 +730,31 @@ export function AnalystDashboard() {
                   className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4 transition-all hover:bg-accent/5 hover:border-primary/50 hover:shadow-md"
                 >
                   <div className="flex items-center justify-between">
-                    <div className={`w-10 h-10 ${agent.color} rounded-lg flex items-center justify-center text-2xl`}>
+                    <div
+                      className={`w-10 h-10 ${agent.color} rounded-lg flex items-center justify-center text-2xl`}
+                    >
                       {agent.icon}
                     </div>
-                    {state.loading && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
-                    {state.status === 'success' && <CheckCircle className="h-4 w-4 text-green-500" />}
-                    {state.status === 'error' && <XCircle className="h-4 w-4 text-red-500" />}
+                    {state.loading && (
+                      <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                    )}
+                    {state.status === "success" && (
+                      <CheckCircle className="h-4 w-4 text-green-500" />
+                    )}
+                    {state.status === "error" && (
+                      <XCircle className="h-4 w-4 text-red-500" />
+                    )}
                   </div>
                   <h4 className="text-sm font-semibold">{agent.name}</h4>
-                  {state.status !== 'idle' && (
+                  {state.status !== "idle" && (
                     <>
                       <div className="flex items-baseline gap-2">
-                        <span className="text-2xl font-bold font-mono">{score.toFixed(1)}</span>
-                        <span className="text-xs text-muted-foreground">/10</span>
+                        <span className="text-2xl font-bold font-mono">
+                          {score.toFixed(1)}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          /10
+                        </span>
                         <Badge variant="outline" className="ml-auto">
                           {sentiment}
                         </Badge>
@@ -723,8 +770,10 @@ export function AnalystDashboard() {
                       </div>
                     </>
                   )}
-                  {state.status === 'idle' && (
-                    <p className="text-xs text-muted-foreground">Not yet analyzed</p>
+                  {state.status === "idle" && (
+                    <p className="text-xs text-muted-foreground">
+                      Not yet analyzed
+                    </p>
                   )}
                   <div className="flex gap-2 mt-auto">
                     <button
@@ -743,14 +792,14 @@ export function AnalystDashboard() {
                     </button>
                     <button
                       onClick={() => setSelectedAgent(state)}
-                      disabled={state.status === 'idle'}
+                      disabled={state.status === "idle"}
                       className="px-3 py-1.5 bg-secondary hover:bg-secondary/80 disabled:bg-muted text-secondary-foreground rounded-md text-xs transition-colors"
                     >
                       View
                     </button>
                   </div>
                 </div>
-              )
+              );
             })}
           </div>
         </CardContent>
@@ -774,7 +823,9 @@ export function AnalystDashboard() {
           <CardContent>
             <div className="space-y-4">
               <p className="text-sm text-muted-foreground leading-relaxed line-clamp-4">
-                {governorData.summary_report || governorData.executive_summary || 'Processing...'}
+                {governorData.summary_report ||
+                  governorData.executive_summary ||
+                  "Processing..."}
               </p>
               <button
                 onClick={() => setShowGovernorDialog(true)}
@@ -788,12 +839,17 @@ export function AnalystDashboard() {
       )}
 
       {/* Agent Detail Dialog */}
-      <Dialog open={!!selectedAgent} onOpenChange={() => setSelectedAgent(null)}>
+      <Dialog
+        open={!!selectedAgent}
+        onOpenChange={() => setSelectedAgent(null)}
+      >
         <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
           {selectedAgent && selectedAgent.data && (
             <>
               <DialogHeader>
-                <DialogTitle className="text-2xl">{selectedAgent.name}</DialogTitle>
+                <DialogTitle className="text-2xl">
+                  {selectedAgent.name}
+                </DialogTitle>
                 <DialogDescription>Analysis report</DialogDescription>
               </DialogHeader>
               <div className="space-y-6 mt-4">
@@ -803,13 +859,22 @@ export function AnalystDashboard() {
                     {getSummary(selectedAgent.data)}
                   </p>
                 </div>
-                
-                {extractKeyPoints(selectedAgent.data.detailed_report || selectedAgent.data.detailed).length > 0 && (
+
+                {extractKeyPoints(
+                  selectedAgent.data.detailed_report ||
+                    selectedAgent.data.detailed
+                ).length > 0 && (
                   <div>
                     <h4 className="font-semibold mb-3">Key Points</h4>
                     <ul className="space-y-2">
-                      {extractKeyPoints(selectedAgent.data.detailed_report || selectedAgent.data.detailed).map((point, idx) => (
-                        <li key={idx} className="flex items-start gap-2 text-sm text-muted-foreground">
+                      {extractKeyPoints(
+                        selectedAgent.data.detailed_report ||
+                          selectedAgent.data.detailed
+                      ).map((point, idx) => (
+                        <li
+                          key={idx}
+                          className="flex items-start gap-2 text-sm text-muted-foreground"
+                        >
                           <span className="text-primary mt-1">•</span>
                           <span>{point}</span>
                         </li>
@@ -817,18 +882,26 @@ export function AnalystDashboard() {
                     </ul>
                   </div>
                 )}
-                
+
                 <div>
                   <button
                     onClick={() => {
-                      const fullReport = selectedAgent.data?.detailed_report || selectedAgent.data?.detailed || 'No detailed report available'
-                      const blob = new Blob([fullReport], { type: 'text/plain' })
-                      const url = URL.createObjectURL(blob)
-                      const a = document.createElement('a')
-                      a.href = url
-                      a.download = `${selectedAgent.name.replace(' ', '_')}_report.txt`
-                      a.click()
-                      URL.revokeObjectURL(url)
+                      const fullReport =
+                        selectedAgent.data?.detailed_report ||
+                        selectedAgent.data?.detailed ||
+                        "No detailed report available";
+                      const blob = new Blob([fullReport], {
+                        type: "text/plain",
+                      });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = `${selectedAgent.name.replace(
+                        " ",
+                        "_"
+                      )}_report.txt`;
+                      a.click();
+                      URL.revokeObjectURL(url);
                     }}
                     className="px-4 py-2 bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded-md text-sm transition-colors"
                   >
@@ -845,8 +918,12 @@ export function AnalystDashboard() {
       <Dialog open={showGovernorDialog} onOpenChange={setShowGovernorDialog}>
         <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-2xl">Governor Investment Memo</DialogTitle>
-            <DialogDescription>Comprehensive synthesis of all agent analyses</DialogDescription>
+            <DialogTitle className="text-2xl">
+              Governor Investment Memo
+            </DialogTitle>
+            <DialogDescription>
+              Comprehensive synthesis of all agent analyses
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-6 mt-4">
             {governorData?.executive_summary && (
@@ -857,41 +934,51 @@ export function AnalystDashboard() {
                 </p>
               </div>
             )}
-            
-            {governorData?.summary_report && !governorData?.executive_summary && (
-              <div className="p-4 rounded-lg bg-muted/50">
-                <h4 className="font-semibold mb-2">Summary</h4>
-                <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
-                  {governorData.summary_report}
-                </p>
-              </div>
-            )}
-            
+
+            {governorData?.summary_report &&
+              !governorData?.executive_summary && (
+                <div className="p-4 rounded-lg bg-muted/50">
+                  <h4 className="font-semibold mb-2">Summary</h4>
+                  <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
+                    {governorData.summary_report}
+                  </p>
+                </div>
+              )}
+
             {extractKeyPoints(governorData?.detailed_report).length > 0 && (
               <div>
                 <h4 className="font-semibold mb-3">Key Findings</h4>
                 <ul className="space-y-2">
-                  {extractKeyPoints(governorData?.detailed_report).map((point, idx) => (
-                    <li key={idx} className="flex items-start gap-2 text-sm text-muted-foreground">
-                      <span className="text-primary mt-1">•</span>
-                      <span>{point}</span>
-                    </li>
-                  ))}
+                  {extractKeyPoints(governorData?.detailed_report).map(
+                    (point, idx) => (
+                      <li
+                        key={idx}
+                        className="flex items-start gap-2 text-sm text-muted-foreground"
+                      >
+                        <span className="text-primary mt-1">•</span>
+                        <span>{point}</span>
+                      </li>
+                    )
+                  )}
                 </ul>
               </div>
             )}
-            
+
             <div>
               <button
                 onClick={() => {
-                  const fullReport = governorData?.detailed_report || 'No detailed report available'
-                  const blob = new Blob([fullReport], { type: 'text/markdown' })
-                  const url = URL.createObjectURL(blob)
-                  const a = document.createElement('a')
-                  a.href = url
-                  a.download = `${ticker}_investment_memo.md`
-                  a.click()
-                  URL.revokeObjectURL(url)
+                  const fullReport =
+                    governorData?.detailed_report ||
+                    "No detailed report available";
+                  const blob = new Blob([fullReport], {
+                    type: "text/markdown",
+                  });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `${ticker}_investment_memo.md`;
+                  a.click();
+                  URL.revokeObjectURL(url);
                 }}
                 className="px-4 py-2 bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded-md text-sm transition-colors"
               >
@@ -906,30 +993,42 @@ export function AnalystDashboard() {
       <Dialog open={showRiskDialog} onOpenChange={setShowRiskDialog}>
         <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-2xl">Risk Assessment Report</DialogTitle>
-            <DialogDescription>Comprehensive risk analysis and recommendation</DialogDescription>
+            <DialogTitle className="text-2xl">
+              Risk Assessment Report
+            </DialogTitle>
+            <DialogDescription>
+              Comprehensive risk analysis and recommendation
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-6 mt-4">
             {recommendation && riskData && (
-              <div className={`p-6 rounded-lg ${getRecommendationColor(riskData.overall_risk_score)}`}>
+              <div
+                className={`p-6 rounded-lg ${getRecommendationColor(
+                  riskData.overall_risk_score
+                )}`}
+              >
                 <div className="text-center space-y-3">
                   <div className="text-3xl font-bold">
-                    {recommendation.replace('_', ' ')}
+                    {recommendation.replace("_", " ")}
                   </div>
                   <div className="grid grid-cols-2 gap-4 text-sm opacity-90">
                     <div>
                       <div className="font-medium">Risk Score</div>
-                      <div className="text-2xl font-bold">{riskData.overall_risk_score}/100</div>
+                      <div className="text-2xl font-bold">
+                        {riskData.overall_risk_score}/100
+                      </div>
                     </div>
                     <div>
                       <div className="font-medium">Risk Level</div>
-                      <div className="text-2xl font-bold">{riskData.overall_risk_level}</div>
+                      <div className="text-2xl font-bold">
+                        {riskData.overall_risk_level}
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
             )}
-            
+
             {riskData?.summary_report && (
               <div className="p-4 rounded-lg bg-muted/50">
                 <h4 className="font-semibold mb-2">Summary</h4>
@@ -938,32 +1037,40 @@ export function AnalystDashboard() {
                 </p>
               </div>
             )}
-            
+
             {extractKeyPoints(riskData?.detailed_report).length > 0 && (
               <div>
                 <h4 className="font-semibold mb-3">Key Risk Factors</h4>
                 <ul className="space-y-2">
-                  {extractKeyPoints(riskData?.detailed_report).map((point, idx) => (
-                    <li key={idx} className="flex items-start gap-2 text-sm text-muted-foreground">
-                      <span className="text-destructive mt-1">•</span>
-                      <span>{point}</span>
-                    </li>
-                  ))}
+                  {extractKeyPoints(riskData?.detailed_report).map(
+                    (point, idx) => (
+                      <li
+                        key={idx}
+                        className="flex items-start gap-2 text-sm text-muted-foreground"
+                      >
+                        <span className="text-destructive mt-1">•</span>
+                        <span>{point}</span>
+                      </li>
+                    )
+                  )}
                 </ul>
               </div>
             )}
-            
+
             <div>
               <button
                 onClick={() => {
-                  const fullReport = riskData?.detailed_report || 'No detailed report available'
-                  const blob = new Blob([fullReport], { type: 'text/markdown' })
-                  const url = URL.createObjectURL(blob)
-                  const a = document.createElement('a')
-                  a.href = url
-                  a.download = `${ticker}_risk_assessment.md`
-                  a.click()
-                  URL.revokeObjectURL(url)
+                  const fullReport =
+                    riskData?.detailed_report || "No detailed report available";
+                  const blob = new Blob([fullReport], {
+                    type: "text/markdown",
+                  });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `${ticker}_risk_assessment.md`;
+                  a.click();
+                  URL.revokeObjectURL(url);
                 }}
                 className="px-4 py-2 bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded-md text-sm transition-colors"
               >
