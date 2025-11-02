@@ -6,11 +6,23 @@ export interface AgentResponse {
   agent: string;
   summary?: string;
   summary_report?: string;
+  dashboard_summary?: string; // News agent specific
   detailed?: string;
   detailed_report?: string;
   status?: string;
   timestamp?: string;
   error?: string;
+  // News agent specific fields
+  company?: string;
+  total_articles_analyzed?: number;
+  sentiment_breakdown?: {
+    bullish: number;
+    bearish: number;
+    neutral: number;
+  };
+  weighted_sentiment_score?: number;
+  bullish_pressure?: number;
+  bearish_pressure?: number;
 }
 
 export interface GovernorResponse {

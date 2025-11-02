@@ -229,7 +229,9 @@ function getRecommendation(riskScore: number | undefined): Recommendation {
 function getSummary(data: AgentResponse | null): string {
   if (!data) return 'Not yet analyzed'
   if (data.error) return data.error
-  return data.summary || data.summary_report || 'No summary available'
+  // Check for different summary field names from different agents
+  const anyData = data as any
+  return data.summary || data.summary_report || anyData.dashboard_summary || 'No summary available'
 }
 
 function formatTimeAgo(dateString: string): string {
