@@ -121,6 +121,51 @@ export async function getDetailedReport(ticker: string, agent: string): Promise<
   return data.content;
 }
 
+export interface NewsArticle {
+  title: string;
+  sentiment: string;
+  impact: number;
+  weighted_impact: number;
+  recency_weight: number;
+  published_at: string;
+  reason: string;
+  url: string;
+  source: string;
+  source_id: string;
+}
+
+export interface NewsAgentResponse {
+  company: string;
+  total_articles_analyzed: number;
+  sentiment_breakdown: {
+    bullish: number;
+    bearish: number;
+    neutral: number;
+  };
+  weighted_sentiment_score: number;
+  bullish_articles: NewsArticle[];
+  bearish_articles: NewsArticle[];
+  neutral_articles: NewsArticle[];
+  high_impact_articles: NewsArticle[];
+}
+
+export async function getNewsAgentData(ticker: string): Promise<NewsAgentResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/agents/news`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ ticker: ticker.toUpperCase() }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to fetch news' }));
+    throw new Error(error.detail || 'Failed to fetch news data');
+  }
+
+  return response.json();
+}
+
 export async function checkHealth(): Promise<{ status: string; service: string }> {
   const response = await fetch(`${API_BASE_URL}/api/health`);
 

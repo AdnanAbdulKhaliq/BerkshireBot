@@ -5,9 +5,9 @@ import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
-import { Activity, TrendingUp, TrendingDown, Minus, Newspaper, Brain, FileText, AlertCircle, Loader2 } from "lucide-react"
+import { Activity, TrendingUp, TrendingDown, Minus, Newspaper, Brain, FileText, AlertCircle, Loader2, ExternalLink } from "lucide-react"
 import { useState, useEffect } from "react"
-import { analyzeStock, rerunAgent, getAnalysisState, type AnalysisState } from "@/lib/api"
+import { analyzeStock, rerunAgent, getAnalysisState, getNewsAgentData, type AnalysisState, type NewsArticle, type NewsAgentResponse } from "@/lib/api"
 
 // Mock data for stock price chart (you can replace this with real data later)
 const stockData = [
@@ -27,44 +27,15 @@ const stockData = [
   { time: "16:00", price: 259.7 },
 ]
 
-// Mock news articles (you can integrate real news data later)
-const newsArticles = [
-  {
-    id: 1,
-    title: "Tech Giant Announces Record Q4 Earnings",
-    source: "Financial Times",
-    time: "2 hours ago",
-    sentiment: "positive",
-  },
-  {
-    id: 2,
-    title: "New Product Launch Expected to Drive Growth",
-    source: "Bloomberg",
-    time: "4 hours ago",
-    sentiment: "positive",
-  },
-  {
-    id: 3,
-    title: "Regulatory Concerns Emerge in European Markets",
-    source: "Reuters",
-    time: "6 hours ago",
-    sentiment: "negative",
-  },
-  {
-    id: 4,
-    title: "Analyst Upgrades Price Target to $300",
-    source: "MarketWatch",
-    time: "8 hours ago",
-    sentiment: "positive",
-  },
-  {
-    id: 5,
-    title: "Supply Chain Improvements Show Progress",
-    source: "WSJ",
-    time: "10 hours ago",
-    sentiment: "neutral",
-  },
-]
+interface DisplayNewsArticle {
+  id: string;
+  title: string;
+  source: string;
+  time: string;
+  sentiment: "positive" | "negative" | "neutral";
+  summary: string;
+  url: string;
+}
 
 interface AgentData {
   name: string
@@ -172,6 +143,47 @@ function convertStateToAgentData(state: AnalysisState): AgentData[] {
   return agents
 }
 
+function formatTimeAgo(dateString: string): string {
+  const date = new Date(dateString)
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
+  const diffDays = Math.floor(diffHours / 24)
+  
+  if (diffDays > 0) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`
+  if (diffHours > 0) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`
+  return 'Just now'
+}
+
+function convertNewsToDisplay(newsData: NewsAgentResponse): DisplayNewsArticle[] {
+  const allArticles: NewsArticle[] = [
+    ...newsData.high_impact_articles.slice(0, 3),
+    ...newsData.bullish_articles,
+    ...newsData.bearish_articles,
+    ...newsData.neutral_articles,
+  ]
+  
+  // Remove duplicates
+  const seen = new Set<string>()
+  const uniqueArticles = allArticles.filter(article => {
+    if (seen.has(article.url)) return false
+    seen.add(article.url)
+    return true
+  })
+  
+  return uniqueArticles.map((article, index) => ({
+    id: article.url || `article-${index}`,
+    title: article.title,
+    source: article.source,
+    time: formatTimeAgo(article.published_at),
+    sentiment: article.sentiment.toLowerCase() === 'bullish' ? 'positive' as const : 
+               article.sentiment.toLowerCase() === 'bearish' ? 'negative' as const : 
+               'neutral' as const,
+    summary: article.reason,
+    url: article.url,
+  }))
+}
+
 export function AnalystDashboard() {
   const [ticker, setTicker] = useState("TSLA")
   const [loading, setLoading] = useState(false)
@@ -179,6 +191,8 @@ export function AnalystDashboard() {
   const [agentData, setAgentData] = useState<AgentData[]>([])
   const [selectedAgent, setSelectedAgent] = useState<AgentData | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [newsArticles, setNewsArticles] = useState<DisplayNewsArticle[]>([])
+  const [selectedNews, setSelectedNews] = useState<DisplayNewsArticle | null>(null)
 
   const handleAnalyze = async () => {
     if (!ticker.trim()) {
@@ -190,10 +204,28 @@ export function AnalystDashboard() {
     setError(null)
 
     try {
-      await analyzeStock(ticker)
-      const fullState = await getAnalysisState(ticker)
-      setAnalysisState(fullState)
-      setAgentData(convertStateToAgentData(fullState))
+      // For testing: Just fetch news agent data directly
+      const newsData = await getNewsAgentData(ticker)
+      setNewsArticles(convertNewsToDisplay(newsData))
+      
+      // Create a simple agent data entry for news agent to show sentiment
+      const newsAgentData: AgentData = {
+        name: "News Agent",
+        sentiment: newsData.weighted_sentiment_score > 0.1 ? "positive" : 
+                   newsData.weighted_sentiment_score < -0.1 ? "negative" : "neutral",
+        score: ((newsData.weighted_sentiment_score + 1) / 2) * 10, // Convert -1 to 1 scale to 0-10
+        status: "success",
+        summary: `Analyzed ${newsData.total_articles_analyzed} articles. Bullish: ${newsData.sentiment_breakdown.bullish}, Bearish: ${newsData.sentiment_breakdown.bearish}, Neutral: ${newsData.sentiment_breakdown.neutral}. Weighted sentiment score: ${newsData.weighted_sentiment_score.toFixed(2)}`,
+        details: { content: JSON.stringify(newsData, null, 2) }
+      }
+      
+      setAgentData([newsAgentData])
+      
+      // Optionally still run full analysis in background
+      // await analyzeStock(ticker)
+      // const fullState = await getAnalysisState(ticker)
+      // setAnalysisState(fullState)
+      // setAgentData(convertStateToAgentData(fullState))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Analysis failed')
     } finally {
@@ -335,24 +367,31 @@ export function AnalystDashboard() {
             </CardTitle>
             <CardDescription>Latest market-moving news</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {newsArticles.map((article) => (
-                <div
-                  key={article.id}
-                  className="flex gap-3 rounded-lg border border-border bg-card p-3 transition-colors hover:bg-accent/5"
-                >
-                  <div className="mt-1">{getSentimentIcon(article.sentiment)}</div>
-                  <div className="flex-1 space-y-1">
-                    <h4 className="text-sm font-medium leading-snug text-pretty">{article.title}</h4>
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <span>{article.source}</span>
-                      <span>•</span>
-                      <span>{article.time}</span>
+          <CardContent className="h-[600px] overflow-y-auto">
+            <div className="space-y-4 pr-2">
+              {newsArticles.length > 0 ? (
+                newsArticles.map((article) => (
+                  <button
+                    key={article.id}
+                    onClick={() => setSelectedNews(article)}
+                    className="w-full flex gap-3 rounded-lg border border-border bg-card p-3 transition-all hover:bg-accent/5 hover:border-primary/50 hover:shadow-md cursor-pointer text-left"
+                  >
+                    <div className="mt-1">{getSentimentIcon(article.sentiment)}</div>
+                    <div className="flex-1 space-y-1">
+                      <h4 className="text-sm font-medium leading-snug text-pretty">{article.title}</h4>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <span>{article.source}</span>
+                        <span>•</span>
+                        <span>{article.time}</span>
+                      </div>
                     </div>
-                  </div>
+                  </button>
+                ))
+              ) : (
+                <div className="text-center text-sm text-muted-foreground py-8">
+                  No news articles available. Click "Analyze" to fetch latest news.
                 </div>
-              ))}
+              )}
             </div>
           </CardContent>
         </Card>
@@ -496,6 +535,52 @@ export function AnalystDashboard() {
 
                 <div className="p-3 rounded-lg bg-muted/50 text-xs text-muted-foreground">
                   Status: {selectedAgent.status}
+                </div>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* News Article Detail Dialog */}
+      <Dialog open={!!selectedNews} onOpenChange={(open) => !open && setSelectedNews(null)}>
+        <DialogContent className="max-w-2xl">
+          {selectedNews && (
+            <>
+              <DialogHeader>
+                <div className="flex items-start justify-between gap-4">
+                  <DialogTitle className="text-xl leading-tight pr-8">{selectedNews.title}</DialogTitle>
+                  <Badge variant="outline" className={getSentimentColor(selectedNews.sentiment)}>
+                    {selectedNews.sentiment}
+                  </Badge>
+                </div>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground pt-2">
+                  <span className="font-medium">{selectedNews.source}</span>
+                  <span>•</span>
+                  <span>{selectedNews.time}</span>
+                </div>
+              </DialogHeader>
+
+              <div className="space-y-4 mt-4">
+                {/* Summary */}
+                <div>
+                  <h4 className="font-semibold mb-2 text-sm">AI Summary</h4>
+                  <p className="text-sm text-muted-foreground leading-relaxed">
+                    {selectedNews.summary}
+                  </p>
+                </div>
+
+                {/* Link to Full Article */}
+                <div className="pt-4 border-t">
+                  <a
+                    href={selectedNews.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"
+                  >
+                    Read Full Article
+                    <ExternalLink className="h-4 w-4" />
+                  </a>
                 </div>
               </div>
             </>
