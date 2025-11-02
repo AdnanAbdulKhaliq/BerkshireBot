@@ -55,7 +55,6 @@ const AGENTS = [
   { id: 'sec', name: 'SEC Agent', icon: '📋', color: 'bg-blue-500' },
   { id: 'news', name: 'News Agent', icon: '📰', color: 'bg-green-500' },
   { id: 'social', name: 'Social Agent', icon: '💬', color: 'bg-purple-500' },
-  { id: 'chart', name: 'Chart Agent', icon: '📊', color: 'bg-orange-500' },
   { id: 'analyst', name: 'Analyst Agent', icon: '🔍', color: 'bg-red-500' },
 ]
 
@@ -630,7 +629,7 @@ export function AnalystDashboard() {
         </Card>
 
         {/* News Articles - Top Right */}
-        <Card className="lg:row-span-2">
+        <Card className="lg:row-span-1">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Newspaper className="h-5 w-5 text-primary" />
@@ -638,7 +637,7 @@ export function AnalystDashboard() {
             </CardTitle>
             <CardDescription>Latest market-moving news</CardDescription>
           </CardHeader>
-          <CardContent className="h-[600px] overflow-y-auto">
+          <CardContent className="h-[300px] overflow-y-auto">
             <div className="space-y-4 pr-2">
               {newsArticles.length > 0 ? (
                 newsArticles.map((article) => (
@@ -671,53 +670,6 @@ export function AnalystDashboard() {
             </div>
           </CardContent>
         </Card>
-
-        {/* Recommendation Card */}
-        <Card className={recommendation ? getRecommendationColor(riskData?.overall_risk_score) : ''}>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              {recommendation ? (
-                <>
-                  {recommendation.includes('BUY') ? <TrendingUp className="h-5 w-5" /> : <TrendingDown className="h-5 w-5" />}
-                  Recommendation
-                </>
-              ) : (
-                <>
-                  <AlertCircle className="h-5 w-5" />
-                  Awaiting Analysis
-                </>
-              )}
-            </CardTitle>
-            <CardDescription className={recommendation ? 'opacity-90' : ''}>
-              Based on risk assessment
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {recommendation ? (
-              <div className="space-y-4">
-                <div className="text-4xl font-bold text-center">
-                  {recommendation.replace('_', ' ')}
-                </div>
-                {riskData && (
-                  <div className="space-y-2 text-sm opacity-90">
-                    <div>Risk Score: {riskData.overall_risk_score}/100</div>
-                    <div>Risk Level: {riskData.overall_risk_level}</div>
-                  </div>
-                )}
-                <button
-                  onClick={() => setShowRiskDialog(true)}
-                  className="w-full px-3 py-2 bg-white/20 hover:bg-white/30 rounded-md text-sm transition-colors"
-                >
-                  View Full Risk Report
-                </button>
-              </div>
-            ) : (
-              <div className="text-center py-8 text-muted-foreground">
-                <p>Run full analysis to get recommendation</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
       </div>
 
       {/* Agent Sentiments */}
@@ -730,7 +682,7 @@ export function AnalystDashboard() {
           <CardDescription>Individual agent analysis results</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {AGENTS.map((agent) => {
               const state = agentStates[agent.id]
               const summary = getSummary(state.data)
@@ -804,77 +756,35 @@ export function AnalystDashboard() {
         </CardContent>
       </Card>
 
-      {/* Governor & Risk Summary */}
-      {(governorData || riskData) && (
-        <div className="grid gap-6 lg:grid-cols-2">
-          {governorData && (
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle className="flex items-center gap-2">
-                      <FileText className="h-5 w-5 text-primary" />
-                      Governor Synthesis
-                    </CardTitle>
-                    <CardDescription>Comprehensive investment memo</CardDescription>
-                  </div>
-                  <CheckCircle className="h-5 w-5 text-green-500" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <p className="text-sm text-muted-foreground leading-relaxed line-clamp-4">
-                    {governorData.summary_report || governorData.executive_summary || 'Processing...'}
-                  </p>
-                  <button
-                    onClick={() => setShowGovernorDialog(true)}
-                    className="px-4 py-2 bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded-md text-sm transition-colors"
-                  >
-                    View Full Investment Memo
-                  </button>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-          
-          {riskData && (
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle className="flex items-center gap-2">
-                      <AlertCircle className="h-5 w-5 text-destructive" />
-                      Risk Assessment
-                    </CardTitle>
-                    <CardDescription>Risk analysis and scoring</CardDescription>
-                  </div>
-                  <CheckCircle className="h-5 w-5 text-green-500" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">Overall Risk Score</span>
-                    <span className="text-2xl font-bold">{riskData.overall_risk_score}/100</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">Risk Level</span>
-                    <Badge variant="outline">{riskData.overall_risk_level}</Badge>
-                  </div>
-                  <p className="text-sm text-muted-foreground leading-relaxed line-clamp-3">
-                    {riskData.summary_report || 'Processing...'}
-                  </p>
-                  <button
-                    onClick={() => setShowRiskDialog(true)}
-                    className="px-4 py-2 bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded-md text-sm transition-colors"
-                  >
-                    View Full Risk Report
-                  </button>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </div>
+      {/* Governor Synthesis */}
+      {governorData && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-primary" />
+                  Governor Synthesis
+                </CardTitle>
+                <CardDescription>Comprehensive investment memo</CardDescription>
+              </div>
+              <CheckCircle className="h-5 w-5 text-green-500" />
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground leading-relaxed line-clamp-4">
+                {governorData.summary_report || governorData.executive_summary || 'Processing...'}
+              </p>
+              <button
+                onClick={() => setShowGovernorDialog(true)}
+                className="px-4 py-2 bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded-md text-sm transition-colors"
+              >
+                View Full Investment Memo
+              </button>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* Agent Detail Dialog */}
