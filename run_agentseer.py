@@ -588,7 +588,6 @@ def start_api_server(host="0.0.0.0", port=8000):
             raise HTTPException(status_code=500, detail=str(e))
 
     # --- NEW ENDPOINT: MC ROLLOUT ---
-    # --- THIS IS THE CORRECTED FUNCTION ---
     @app.post("/api/mc_rollout", response_model=MC_RolloutResponse)
     async def mc_rollout(request: MC_RolloutRequest):
         """Run a Monte Carlo simulation for a ticker."""
@@ -596,19 +595,18 @@ def start_api_server(host="0.0.0.0", port=8000):
             ticker = request.ticker.upper()
             t = request.t
             sims = request.sims
-            days, forecast = MC_sims(ticker, t, sims)
+            result = MC_sims(ticker, t, sims)
+            
             return MC_RolloutResponse(
                 status="success",
                 ticker=ticker,
                 t=t,
                 sims=sims,
-                days=days,
-                forecast=forecast.tolist(),
+                days=result["days"],
+                forecast=result["median"].tolist(),
             )
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
-
-    # --- END OF CORRECTED FUNCTION ---
 
     # --- NEW ENDPOINT: RERUN AGENT ---
     @app.post("/api/rerun", response_model=RerunResponse)

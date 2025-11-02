@@ -1,6 +1,7 @@
 import yfinance as yf
 import matplotlib.pyplot as plt
 import numpy as np
+import time
 
 #example_header = yf.download("AAPL", period="1y", interval="1d")
 #print(example_header.head())
@@ -13,21 +14,36 @@ import numpy as np
 
 def MC_sims(ticker: str, t: int, sims: int, display: bool = False) -> np.ndarray:
     # Download historical data
-    data = yf.download(ticker, period="2y", interval="1d", auto_adjust=True)
+    print(f"Downloading data for ticker: {ticker}")
+    
+    try:
+        ticker_obj = yf.Ticker(ticker)
+        data = ticker_obj.history(period="2y", auto_adjust=True)
+        time.sleep(0.1)
+    except Exception as e:
+        raise ValueError(f"Failed to download data for ticker {ticker}: {str(e)}")
+    
+    if data is None or data.empty:
+        raise ValueError(f"No data found for ticker {ticker}. Please verify the ticker symbol is correct.")
+    
     prices = data['Close'].values
-    prices = [item[0] for item in prices]
-    #i.e.
-    #new_prices = []
-    #for i in prices:
-        #new_prices.append(i[0])
-
-    print(min(prices), max(prices))
-    print(np.isnan(prices).sum())
+    
+    if len(prices.shape) > 1:
+        prices = prices.flatten()
+    
+    prices = prices[~np.isnan(prices)]
+    
+    if len(prices) == 0:
+        raise ValueError(f"No valid price data found for ticker {ticker}")
+    
+    print(f"Price range: min={min(prices):.2f}, max={max(prices):.2f}")
+    print(f"Total data points: {len(prices)}")
 
     # Sanity check: enough data
     if len(prices) < 2:
-        print("Not enough historical data to run simulation.")
-        return
+        raise ValueError(f"Not enough historical data to run simulation (only {len(prices)} data points)")
+    
+    prices = list(prices)
 
     # Daily log returns
     ln_returns = np.diff(np.log(prices))
@@ -92,4 +108,10 @@ def MC_sims(ticker: str, t: int, sims: int, display: bool = False) -> np.ndarray
     # Summary statistics
     print(f"\nExpected price after {t} days: mean = {forecast[-1].mean():.2f}, std = {forecast[-1].std():.2f}")
 
-    return {"days": days, "forecast": forecast}
+    return {
+        "days": days,
+        "forecast": forecast,
+        "lower": lower,
+        "median": middle,
+        "upper": upper
+    }

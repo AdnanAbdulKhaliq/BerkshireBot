@@ -7,7 +7,7 @@ import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
 import { Activity, TrendingUp, TrendingDown, Minus, Newspaper, Brain, FileText, AlertCircle, Loader2, ExternalLink } from "lucide-react"
 import { useState, useEffect } from "react"
-import { analyzeStock, rerunAgent, getAnalysisState, getNewsAgentData, type AnalysisState, type NewsArticle, type NewsAgentResponse } from "@/lib/api"
+import { analyzeStock, rerunAgent, getAnalysisState, getNewsAgentData, runMonteCarloSimulation, type AnalysisState, type NewsArticle, type NewsAgentResponse, type MonteCarloResult } from "@/lib/api"
 
 // Mock data for stock price chart (you can replace this with real data later)
 const stockData = [
@@ -193,6 +193,8 @@ export function AnalystDashboard() {
   const [error, setError] = useState<string | null>(null)
   const [newsArticles, setNewsArticles] = useState<DisplayNewsArticle[]>([])
   const [selectedNews, setSelectedNews] = useState<DisplayNewsArticle | null>(null)
+  const [mcData, setMcData] = useState<{ day: number; price: number }[]>([])
+  const [mcLoading, setMcLoading] = useState(false)
 
   const handleAnalyze = async () => {
     if (!ticker.trim()) {
@@ -201,35 +203,36 @@ export function AnalystDashboard() {
     }
 
     setLoading(true)
+    setMcLoading(true)
     setError(null)
 
     try {
-      // For testing: Just fetch news agent data directly
-      const newsData = await getNewsAgentData(ticker)
+      // Run Monte Carlo simulation, news data, and analysis in parallel
+      const [mcResult, newsData] = await Promise.all([
+        runMonteCarloSimulation(ticker, 30, 1000),
+        getNewsAgentData(ticker),
+        analyzeStock(ticker)
+      ])
+
+      // Set Monte Carlo data
+      const chartData = mcResult.days.map((day, index) => ({
+        day: day,
+        price: mcResult.forecast[index]
+      }))
+      setMcData(chartData)
+
+      // Set news articles
       setNewsArticles(convertNewsToDisplay(newsData))
-      
-      // Create a simple agent data entry for news agent to show sentiment
-      const newsAgentData: AgentData = {
-        name: "News Agent",
-        sentiment: newsData.weighted_sentiment_score > 0.1 ? "positive" : 
-                   newsData.weighted_sentiment_score < -0.1 ? "negative" : "neutral",
-        score: ((newsData.weighted_sentiment_score + 1) / 2) * 10, // Convert -1 to 1 scale to 0-10
-        status: "success",
-        summary: `Analyzed ${newsData.total_articles_analyzed} articles. Bullish: ${newsData.sentiment_breakdown.bullish}, Bearish: ${newsData.sentiment_breakdown.bearish}, Neutral: ${newsData.sentiment_breakdown.neutral}. Weighted sentiment score: ${newsData.weighted_sentiment_score.toFixed(2)}`,
-        details: { content: JSON.stringify(newsData, null, 2) }
-      }
-      
-      setAgentData([newsAgentData])
-      
-      // Optionally still run full analysis in background
-      // await analyzeStock(ticker)
-      // const fullState = await getAnalysisState(ticker)
-      // setAnalysisState(fullState)
-      // setAgentData(convertStateToAgentData(fullState))
+
+      // Get full analysis state
+      const fullState = await getAnalysisState(ticker)
+      setAnalysisState(fullState)
+      setAgentData(convertStateToAgentData(fullState))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Analysis failed')
     } finally {
       setLoading(false)
+      setMcLoading(false)
     }
   }
 
@@ -317,44 +320,54 @@ export function AnalystDashboard() {
               <Activity className="h-5 w-5 text-primary" />
               Stock Price Movement
             </CardTitle>
-            <CardDescription>Real-time intraday price action</CardDescription>
+            <CardDescription>Monte Carlo price forecast (30 days)</CardDescription>
           </CardHeader>
           <CardContent>
-            <ChartContainer
-              config={{
-                price: {
-                  label: "Price",
-                  color: "hsl(var(--primary))",
-                },
-              }}
-              className="h-[300px]"
-            >
-              <AreaChart data={stockData}>
-                <defs>
-                  <linearGradient id="fillPrice" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                <XAxis dataKey="time" tickLine={false} axisLine={false} tickMargin={8} className="text-xs" />
-                <YAxis
-                  tickLine={false}
-                  axisLine={false}
-                  tickMargin={8}
-                  className="text-xs"
-                  domain={["dataMin - 5", "dataMax + 5"]}
-                />
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <Area
-                  type="monotone"
-                  dataKey="price"
-                  stroke="hsl(var(--primary))"
-                  strokeWidth={2}
-                  fill="url(#fillPrice)"
-                />
-              </AreaChart>
-            </ChartContainer>
+            {mcLoading ? (
+              <div className="h-[300px] flex items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            ) : mcData.length > 0 ? (
+              <ChartContainer
+                config={{
+                  price: {
+                    label: "Price",
+                    color: "hsl(var(--primary))",
+                  },
+                }}
+                className="h-[300px]"
+              >
+                <AreaChart data={mcData}>
+                  <defs>
+                    <linearGradient id="fillPrice" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis dataKey="day" tickLine={false} axisLine={false} tickMargin={8} className="text-xs" />
+                  <YAxis
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
+                    className="text-xs"
+                    domain={["dataMin - 5", "dataMax + 5"]}
+                  />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Area
+                    type="monotone"
+                    dataKey="price"
+                    stroke="hsl(var(--primary))"
+                    strokeWidth={2}
+                    fill="url(#fillPrice)"
+                  />
+                </AreaChart>
+              </ChartContainer>
+            ) : (
+              <div className="h-[300px] flex items-center justify-center text-sm text-muted-foreground">
+                Click "Analyze" to generate Monte Carlo forecast
+              </div>
+            )}
           </CardContent>
         </Card>
 
