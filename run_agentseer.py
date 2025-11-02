@@ -12,7 +12,6 @@ import argparse
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any
-from flask import Request
 
 # Import the orchestrator and *all its components*
 try:
@@ -589,25 +588,8 @@ def start_api_server(host="0.0.0.0", port=8000):
             raise HTTPException(status_code=500, detail=str(e))
 
     # --- NEW ENDPOINT: MC ROLLOUT ---
-<<<<<<< HEAD
-    @app.post("/api/mc_rollout", response_model=MC_RolloutResponse)
-    async def mc_rollout(request: MC_RolloutRequest):
-        """Run a Monte Carlo simulation for a ticker."""
-        ticker = request.ticker.upper()
-        t = request.t
-        sims = request.sims
-        days, forecast = MC_sims(ticker, t, sims)
-        return MC_RolloutResponse(
-            status="success",
-            ticker=ticker,
-            t=t,
-            sims=sims,
-            days=days,
-            forecast=forecast.tolist(),
-        )
-=======
     # --- THIS IS THE CORRECTED FUNCTION ---
-    @app.post('/api/mc_rollout', response_model=MC_RolloutResponse)
+    @app.post("/api/mc_rollout", response_model=MC_RolloutResponse)
     async def mc_rollout(request: MC_RolloutRequest):
         """Run a Monte Carlo simulation for a ticker."""
         try:
@@ -616,17 +598,17 @@ def start_api_server(host="0.0.0.0", port=8000):
             sims = request.sims
             days, forecast = MC_sims(ticker, t, sims)
             return MC_RolloutResponse(
-                status='success',
+                status="success",
                 ticker=ticker,
                 t=t,
                 sims=sims,
                 days=days,
-                forecast=forecast.tolist()
+                forecast=forecast.tolist(),
             )
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
+
     # --- END OF CORRECTED FUNCTION ---
->>>>>>> 45729a7b3c35c59d21f506f933393d0935681ba1
 
     # --- NEW ENDPOINT: RERUN AGENT ---
     @app.post("/api/rerun", response_model=RerunResponse)
