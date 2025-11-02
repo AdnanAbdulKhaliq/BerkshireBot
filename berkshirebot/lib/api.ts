@@ -130,3 +130,33 @@ export async function checkHealth(): Promise<{ status: string; service: string }
 
   return response.json();
 }
+
+export interface MonteCarloResult {
+  status: string;
+  ticker: string;
+  t: number;
+  sims: number;
+  days: number[];
+  forecast: number[];
+}
+
+export async function runMonteCarloSimulation(ticker: string, days: number = 30, sims: number = 1000): Promise<MonteCarloResult> {
+  const response = await fetch(`${API_BASE_URL}/api/mc_rollout`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ 
+      ticker: ticker.toUpperCase(),
+      t: days,
+      sims: sims
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Monte Carlo simulation failed' }));
+    throw new Error(error.detail || 'Failed to run Monte Carlo simulation');
+  }
+
+  return response.json();
+}

@@ -7,7 +7,7 @@ import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
 import { Activity, TrendingUp, TrendingDown, Minus, Newspaper, Brain, FileText, AlertCircle, Loader2 } from "lucide-react"
 import { useState, useEffect } from "react"
-import { analyzeStock, rerunAgent, getAnalysisState, type AnalysisState } from "@/lib/api"
+import { analyzeStock, rerunAgent, getAnalysisState, runMonteCarloSimulation, type AnalysisState, type MonteCarloResult } from "@/lib/api"
 
 // Mock data for stock price chart (you can replace this with real data later)
 const stockData = [
@@ -179,6 +179,8 @@ export function AnalystDashboard() {
   const [agentData, setAgentData] = useState<AgentData[]>([])
   const [selectedAgent, setSelectedAgent] = useState<AgentData | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [mcData, setMcData] = useState<{ day: number; price: number }[]>([])
+  const [mcLoading, setMcLoading] = useState(false)
 
   const handleAnalyze = async () => {
     if (!ticker.trim()) {
@@ -187,10 +189,21 @@ export function AnalystDashboard() {
     }
 
     setLoading(true)
+    setMcLoading(true)
     setError(null)
 
     try {
-      await analyzeStock(ticker)
+      const [mcResult] = await Promise.all([
+        runMonteCarloSimulation(ticker, 30, 1000),
+        analyzeStock(ticker)
+      ])
+
+      const chartData = mcResult.days.map((day, index) => ({
+        day: day,
+        price: mcResult.forecast[index]
+      }))
+      setMcData(chartData)
+
       const fullState = await getAnalysisState(ticker)
       setAnalysisState(fullState)
       setAgentData(convertStateToAgentData(fullState))
@@ -198,6 +211,7 @@ export function AnalystDashboard() {
       setError(err instanceof Error ? err.message : 'Analysis failed')
     } finally {
       setLoading(false)
+      setMcLoading(false)
     }
   }
 
@@ -278,51 +292,72 @@ export function AnalystDashboard() {
 
       {/* Main Grid */}
       <div className="grid gap-6 lg:grid-cols-3">
-        {/* Stock Price Chart - Top Left */}
+        {/* Monte Carlo Simulation Chart - Top Left */}
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Activity className="h-5 w-5 text-primary" />
-              Stock Price Movement
+              Monte Carlo Simulation
             </CardTitle>
-            <CardDescription>Real-time intraday price action</CardDescription>
+            <CardDescription>30-day price forecast based on 1,000 simulations</CardDescription>
           </CardHeader>
           <CardContent>
-            <ChartContainer
-              config={{
-                price: {
-                  label: "Price",
-                  color: "hsl(var(--primary))",
-                },
-              }}
-              className="h-[300px]"
-            >
-              <AreaChart data={stockData}>
-                <defs>
-                  <linearGradient id="fillPrice" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                <XAxis dataKey="time" tickLine={false} axisLine={false} tickMargin={8} className="text-xs" />
-                <YAxis
-                  tickLine={false}
-                  axisLine={false}
-                  tickMargin={8}
-                  className="text-xs"
-                  domain={["dataMin - 5", "dataMax + 5"]}
-                />
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <Area
-                  type="monotone"
-                  dataKey="price"
-                  stroke="hsl(var(--primary))"
-                  strokeWidth={2}
-                  fill="url(#fillPrice)"
-                />
-              </AreaChart>
-            </ChartContainer>
+            {mcLoading ? (
+              <div className="h-[300px] flex items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            ) : mcData.length > 0 ? (
+              <ChartContainer
+                config={{
+                  price: {
+                    label: "Price",
+                    color: "hsl(var(--primary))",
+                  },
+                }}
+                className="h-[300px]"
+              >
+                <AreaChart data={mcData}>
+                  <defs>
+                    <linearGradient id="fillPrice" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis 
+                    dataKey="day" 
+                    tickLine={false} 
+                    axisLine={false} 
+                    tickMargin={8} 
+                    className="text-xs"
+                    label={{ value: 'Days Ahead', position: 'insideBottom', offset: -5 }}
+                  />
+                  <YAxis
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
+                    className="text-xs"
+                    domain={["dataMin - 5", "dataMax + 5"]}
+                    label={{ value: 'Price ($)', angle: -90, position: 'insideLeft' }}
+                  />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Area
+                    type="monotone"
+                    dataKey="price"
+                    stroke="hsl(var(--primary))"
+                    strokeWidth={2}
+                    fill="url(#fillPrice)"
+                  />
+                </AreaChart>
+              </ChartContainer>
+            ) : (
+              <div className="h-[300px] flex items-center justify-center text-muted-foreground">
+                <div className="text-center">
+                  <Activity className="h-12 w-12 mx-auto mb-3 opacity-20" />
+                  <p>Enter a ticker and click Analyze to generate forecast</p>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 
