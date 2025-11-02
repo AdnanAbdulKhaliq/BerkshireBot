@@ -11,7 +11,7 @@ import numpy as np
 #2024-11-01  221.877365  224.306064  219.249596  219.946350  65276700
 #2024-11-04  220.981537  221.757922  218.692204  219.966273  44944500
 
-def MC_sims(ticker, t, sims):
+def MC_sims(ticker: str, t: int, sims: int, display: bool = False) -> np.ndarray:
     # Download historical data
     data = yf.download(ticker, period="2y", interval="1d", auto_adjust=True)
     prices = data['Close'].values
@@ -71,26 +71,25 @@ def MC_sims(ticker, t, sims):
 
     # Plot using integer days on x-axis
     days = [i for i in range(t + 1)]
-    plt.figure(figsize=(10, 6))
-    plt.plot(days, middle, label="Median Forecast", color='blue')
-    plt.fill_between(days, lower, upper, color='pink', alpha=0.3, label='5th-95th percentile')
 
-    # Sample paths
-    colors = plt.cm.viridis(np.linspace(0, 1, 15))
-    for i in range(15):
-        plt.plot(days, forecast[:, i], color=colors[i], alpha=0.7, linewidth=0.8)
+    if display:
+        plt.figure(figsize=(10, 6))
+        plt.plot(days, middle, label="Median Forecast", color='blue')
+        plt.fill_between(days, lower, upper, color='pink', alpha=0.3, label='5th-95th percentile')
 
-    plt.title(f"Monte Carlo Simulations for {ticker} - {t} Days Ahead")
-    plt.xlabel("Days Ahead")
-    plt.ylabel("Stock Price")
-    plt.legend()
-    plt.grid(True)
-    plt.show()
+        # Sample paths
+        colors = plt.cm.viridis(np.linspace(0, 1, 15))
+        for i in range(15):
+            plt.plot(days, forecast[:, i], color=colors[i], alpha=0.7, linewidth=0.8)
+
+        plt.title(f"Monte Carlo Simulations for {ticker} - {t} Days Ahead")
+        plt.xlabel("Days Ahead")
+        plt.ylabel("Stock Price")
+        plt.legend()
+        plt.grid(True)
+        plt.show()
 
     # Summary statistics
     print(f"\nExpected price after {t} days: mean = {forecast[-1].mean():.2f}, std = {forecast[-1].std():.2f}")
 
-    return forecast
-
-# Example usage
-forecast_output = MC_sims("AAPL", 100, 10000)
+    return {"days": days, "forecast": forecast}

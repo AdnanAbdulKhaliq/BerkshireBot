@@ -12,6 +12,8 @@ import argparse
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any
+import jsonify
+from flask import Request
 
 # Import the orchestrator and *all its components*
 try:
@@ -33,6 +35,8 @@ except ImportError as e:
         "Make sure orchestrator.py is in the same directory and has all dependencies."
     )
     sys.exit(1)
+
+from mc_rollout import MC_sims
 
 # --- UTILITIES ---
 
@@ -359,6 +363,14 @@ def start_api_server(host="0.0.0.0", port=8000):
         governor_summary: str | None = None
         risk_summary: str | None = None
 
+    class MC_RolloutResponse(BaseModel):
+        status: str
+        ticker: str
+        t: int
+        sims: int
+        days: list[int]
+        forecast: list[float]
+
     class HealthResponse(BaseModel):
         status: str
         service: str
@@ -390,8 +402,29 @@ def start_api_server(host="0.0.0.0", port=8000):
                 risk_summary=final_state.get("risk_summary"),
             )
         except Exception as e:
+
             raise HTTPException(status_code=500, detail=str(e))
 
+    # --- NEW ENDPOINT: MC ROLLOUT ---
+    @app.route('/api/mc_rollout', response_model=MC_RolloutResponse)
+    async def mc_rollout(request: Request):
+        """Run a Monte Carlo simulation for a ticker."""
+        data = request.json
+        ticker = data.get('ticker').upper()
+        t = data.get('t', 10)
+        sims = data.get('sims', 1000)
+        days, forecast = MC_sims(ticker, t, sims)
+        return MC_RolloutResponse(
+            status='success',
+            ticker=ticker,
+            t=t,
+            sims=sims,
+            days=days,
+            forecast=forecast.tolist()
+        )
+
+
+    # --- NEW ENDPOINT: RERUN AGENT ---
     @app.post("/api/rerun", response_model=RerunResponse)
     async def rerun_agent(request: RerunRequest):
         """Re-run a specific agent for a ticker."""
