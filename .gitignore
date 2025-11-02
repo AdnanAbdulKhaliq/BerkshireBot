@@ -1,6 +1,7 @@
+.env
+reports/
 venv/
 .venv/
-.env
 
 # SEC Agent generated files
 sec_report_*.md

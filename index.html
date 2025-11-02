@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-gray-900">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AgentSeer Financial Analysis</title>
+    <!-- 1. Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 2. Showdown.js (Markdown to HTML converter) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/showdown/2.1.0/showdown.min.js"></script>
+    
+    <style>
+        /* Custom font */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        /* Simple loading spinner */
+        .loader {
+            border: 4px solid #f3f3f3; /* Light grey */
+            border-top: 4px solid #3b82f6; /* Blue */
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Modal styles */
+        .modal {
+            transition: opacity 0.25s ease;
+        }
+        .modal-content {
+            transition: transform 0.25s ease;
+        }
+        
+        /* Styles for rendered markdown content */
+        .markdown-body {
+            color: #d1d5db; /* gray-300 */
+        }
+        .markdown-body h1, .markdown-body h2, .markdown-body h3 {
+            font-weight: 600;
+            color: #ffffff;
+            border-bottom: 1px solid #4b5563; /* gray-600 */
+            padding-bottom: 8px;
+            margin-top: 24px;
+            margin-bottom: 16px;
+        }
+        .markdown-body h1 { font-size: 1.875rem; /* 3xl */ }
+        .markdown-body h2 { font-size: 1.5rem; /* 2xl */ }
+        .markdown-body h3 { font-size: 1.25rem; /* xl */ }
+        .markdown-body p {
+            line-height: 1.6;
+            margin-bottom: 16px;
+        }
+        .markdown-body ul, .markdown-body ol {
+            margin-left: 24px;
+            margin-bottom: 16px;
+        }
+        .markdown-body li {
+            list-style-type: disc;
+            margin-bottom: 8px;
+        }
+        .markdown-body blockquote {
+            border-left: 4px solid #4b5563; /* gray-600 */
+            padding-left: 16px;
+            color: #9ca3af; /* gray-400 */
+            font-style: italic;
+            margin-bottom: 16px;
+        }
+        .markdown-body strong {
+            font-weight: 600;
+            color: #ffffff;
+        }
+        /* Styling for <pre> blocks which Showdown doesn't wrap */
+        .markdown-body pre {
+            background-color: #1f2937; /* gray-800 */
+            padding: 1rem;
+            border-radius: 0.5rem;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body class="h-full text-gray-200">
+    <div class="min-h-full">
+        <!-- Header -->
+        <header class="bg-gray-800 shadow-lg">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex justify-between items-center h-16">
+                    <h1 class="text-2xl font-bold text-white">AgentSeer Financial Analysis</h1>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8 grid grid-cols-1 lg:grid-cols-3 gap-12">
+            
+            <!-- Left Column: Input & Results -->
+            <div class="lg:col-span-2 space-y-8">
+                <!-- Input Card -->
+                <div class="bg-gray-800 shadow-xl rounded-lg overflow-hidden">
+                    <div class="p-6">
+                        <h2 class="text-xl font-semibold text-white mb-4">New Analysis</h2>
+                        <div class="flex flex-col sm:flex-row gap-4">
+                            <input type="text" id="ticker-input"
+                                   class="flex-grow bg-gray-700 border border-gray-600 text-white rounded-md shadow-sm py-3 px-4 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                   placeholder="Enter stock ticker (e.g., TSLA)">
+                            <button id="analyze-button"
+                                    class="flex justify-center items-center bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-md shadow-lg transition duration-300 ease-in-out transform hover:-translate-y-0.5">
+                                Analyze
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Results Section -->
+                <div id="results-container" class="hidden">
+                    <!-- Loading Spinner -->
+                    <div id="loader" class="hidden flex flex-col items-center justify-center p-8 bg-gray-800 shadow-xl rounded-lg">
+                        <div class="loader"></div>
+                        <p class="mt-4 text-lg text-gray-300">Running analysis... this may take a minute.</p>
+                    </div>
+
+                    <!-- Error Display -->
+                    <div id="error-display" class="hidden p-6 bg-red-900 border border-red-700 text-red-100 rounded-lg shadow-xl">
+                        <h3 class="font-bold mb-2">Analysis Failed</h3>
+                        <p id="error-message"></p>
+                    </div>
+
+                    <!-- Success Display -->
+                    <div id="results-display" class="hidden space-y-6">
+                        <h2 class="text-2xl font-semibold text-white">Analysis Complete</h2>
+                        
+                        <!-- Governor Summary -->
+                        <div class="bg-gray-800 shadow-xl rounded-lg overflow-hidden">
+                            <div class="p-6">
+                                <h3 class="text-lg font-semibold text-blue-300 mb-2">Governor Summary</h3>
+                                <pre id="governor-summary" class="whitespace-pre-wrap text-gray-300 font-sans"></pre>
+                            </div>
+                        </div>
+
+                        <!-- Risk Summary -->
+                        <div class="bg-gray-800 shadow-xl rounded-lg overflow-hidden">
+                            <div class="p-6">
+                                <h3 class="text-lg font-semibold text-orange-300 mb-2">Risk Assessment Summary</h3>
+                                <pre id="risk-summary" class="whitespace-pre-wrap text-gray-300 font-sans"></pre>
+                            </div>
+                        </div>
+
+                        <!-- View Full Report Button -->
+                        <button id="view-breakdown-button"
+                                class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-md shadow-lg transition duration-300 ease-in-out">
+                            View Full Agent Breakdown
+                        </button>
+
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column: Recent Analyses -->
+            <div class="lg:col-span-1">
+                <div class="bg-gray-800 shadow-xl rounded-lg p-6">
+                    <h2 class="text-xl font-semibold text-white mb-4">Recent Analyses</h2>
+                    <ul id="recent-analyses-list" class="space-y-3">
+                        <!-- Items will be injected by JavaScript -->
+                        <li id="recent-loader" class="text-gray-400">Loading history...</li>
+                    </ul>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- Modal for Full Report -->
+    <div id="modal" class="modal fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 p-4 opacity-0 pointer-events-none">
+        <div id="modal-content" class="modal-content bg-gray-800 rounded-lg shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col transform scale-95">
+            <!-- Modal Header -->
+            <div class="flex justify-between items-center p-5 border-b border-gray-700 sticky top-0 bg-gray-800 z-10">
+                <h2 id="modal-title" class="text-2xl font-bold text-white">Full Report</h2>
+                <button id="modal-close" class="text-gray-400 hover:text-white text-3xl">&times;</button>
+            </div>
+            
+            <!-- Modal Body -->
+            <div class="p-6 overflow-y-auto space-y-6 markdown-body" id="modal-body">
+                <!-- Content injected by JavaScript -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // API Configuration
+        const API_BASE_URL = 'http://127.0.0.1:8000';
+
+        // Element Selectors
+        const tickerInput = document.getElementById('ticker-input');
+        const analyzeButton = document.getElementById('analyze-button');
+        const resultsContainer = document.getElementById('results-container');
+        const loader = document.getElementById('loader');
+        const errorDisplay = document.getElementById('error-display');
+        const errorMessage = document.getElementById('error-message');
+        const resultsDisplay = document.getElementById('results-display');
+        const governorSummary = document.getElementById('governor-summary');
+        const riskSummary = document.getElementById('risk-summary');
+        const recentAnalysesList = document.getElementById('recent-analyses-list');
+        const recentLoader = document.getElementById('recent-loader');
+        const breakdownButton = document.getElementById('view-breakdown-button');
+
+        // Modal Selectors
+        const modal = document.getElementById('modal');
+        const modalContent = document.getElementById('modal-content');
+        const modalTitle = document.getElementById('modal-title');
+        const modalBody = document.getElementById('modal-body');
+        const modalClose = document.getElementById('modal-close');
+
+        // Showdown.js Markdown converter
+        const markdownConverter = new showdown.Converter();
+        markdownConverter.setOption('simpleLineBreaks', true); // Handle single newlines
+        markdownConverter.setOption('tables', true); // Enable tables
+        markdownConverter.setOption('ghCompatibleHeaderId', true); // Use GitHub-style header IDs
+
+        // --- Event Listeners ---
+
+        // Analyze Button Click
+        analyzeButton.addEventListener('click', handleAnalyzeClick);
+
+        // Analyze on Enter key press
+        tickerInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                handleAnalyzeClick();
+            }
+        });
+
+        // Modal Close Button
+        modalClose.addEventListener('click', hideModal);
+
+        // Close modal on outside click
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                hideModal();
+            }
+        });
+
+        // --- Functions ---
+
+        /**
+         * Handle the main "Analyze" button click
+         */
+        async function handleAnalyzeClick() {
+            const ticker = tickerInput.value.trim().toUpperCase();
+            if (!ticker) {
+                showError("Please enter a ticker.");
+                return;
+            }
+
+            // 1. Reset UI
+            showLoader();
+            analyzeButton.disabled = true;
+            analyzeButton.textContent = "Analyzing...";
+
+            try {
+                // 2. Make API Call
+                const response = await fetch(`${API_BASE_URL}/api/analyze`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ticker: ticker })
+                });
+
+                if (!response.ok) {
+                    const errData = await response.json();
+                    throw new Error(errData.message || `HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                // 3. Show Results
+                if (data.status === 'success') {
+                    showResults(data, ticker); // Pass ticker to showResults
+                    await loadRecentAnalyses(); // Refresh recent list
+                } else {
+                    throw new Error(data.message || 'Analysis failed to complete.');
+                }
+
+            } catch (error) {
+                console.error('Analysis failed:', error);
+                showError(error.message);
+            } finally {
+                // 4. Restore UI
+                hideLoader();
+                analyzeButton.disabled = false;
+                analyzeButton.textContent = "Analyze";
+            }
+        }
+
+        /**
+         * Load the list of recent analyses from the server
+         */
+        async function loadRecentAnalyses() {
+            try {
+                recentLoader.classList.remove('hidden');
+                recentAnalysesList.innerHTML = ''; // Clear old list
+                recentAnalysesList.appendChild(recentLoader);
+
+                const response = await fetch(`${API_BASE_URL}/api/analyses`);
+                if (!response.ok) throw new Error('Failed to fetch recent analyses.');
+
+                const data = await response.json();
+                const analyses = data.analyses || [];
+
+                recentLoader.classList.add('hidden');
+
+                if (analyses.length === 0) {
+                    recentAnalysesList.innerHTML = '<li class="text-gray-400">No analyses found.</li>';
+                    return;
+                }
+
+                analyses.forEach(analysis => {
+                    const li = document.createElement('li');
+                    li.className = "p-4 bg-gray-700 rounded-lg shadow-md cursor-pointer hover:bg-gray-600 transition-colors duration-200";
+                    li.dataset.ticker = analysis.ticker;
+                    
+                    const statusEmoji = {
+                        'completed_successfully': '✅',
+                        'completed_with_errors': '⚠️',
+                        'failed': '❌'
+                    }.get(analysis.workflow_status, '❓');
+
+                    li.innerHTML = `
+                        <div class="flex justify-between items-center">
+                            <span class="font-bold text-lg text-white">$${analysis.ticker}</span>
+                            <span class="text-sm ${analysis.workflow_status === 'failed' ? 'text-red-400' : 'text-green-400'}">
+                                ${statusEmoji} ${analysis.workflow_status.replace(/_/g, ' ')}
+                            </span>
+                        </div>
+                        <div class="text-xs text-gray-400 mt-2">${new Date(analysis.timestamp).toLocaleString()}</div>
+                        <div class="text-xs text-gray-400 mt-1">
+                            Governor: ${analysis.governor_status} | Risk: ${analysis.risk_status}
+                        </div>
+                    `;
+                    
+                    // Add click listener to open full report
+                    li.addEventListener('click', () => loadFullReport(analysis.ticker));
+                    
+                    recentAnalysesList.appendChild(li);
+                });
+
+            } catch (error) {
+                console.error('Failed to load recent analyses:', error);
+                recentLoader.classList.add('hidden');
+                recentAnalysesList.innerHTML = '<li class="text-red-400">Error loading history.</li>';
+            }
+        }
+
+        /**
+         * Load and display the full report in a modal
+         */
+        async function loadFullReport(ticker) {
+            modalTitle.textContent = `Loading Full Report for $${ticker}...`;
+            modalBody.innerHTML = '<div class="flex justify-center items-center p-8"><div class="loader"></div></div>'; // Show loader inside modal
+            showModal();
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/analysis/${ticker}`);
+                if (!response.ok) throw new Error('Failed to fetch full report.');
+                
+                const state = await response.json();
+                
+                modalTitle.textContent = `Full Report: $${ticker}`;
+                
+                // Helper to render a report section
+                const renderReport = (title, markdownContent) => {
+                    // Check if content is valid, otherwise show a message
+                    if (!markdownContent || markdownContent.trim() === '' || markdownContent.toLowerCase().includes('error')) {
+                        return `
+                            <div class="mb-8 p-4 bg-gray-700 rounded-lg">
+                                <h3 class="text-xl font-semibold text-white mb-2">${title}</h3>
+                                <p class="text-gray-400 italic">Report not available or failed to generate.</p>
+                                ${markdownContent.toLowerCase().includes('error') ? `<pre class="text-red-300 mt-2">${markdownContent}</pre>` : ''}
+                            </div>
+                        `;
+                    }
+                    // Convert markdown to HTML
+                    const htmlContent = markdownConverter.makeHtml(markdownContent);
+                    return `
+                        <div class="mb-8">
+                            <h2 class="text-2xl font-bold text-white mb-4 border-b border-gray-600 pb-2">${title}</h2>
+                            <div class="markdown-body">${htmlContent}</div>
+                        </div>
+                    `;
+                };
+
+                // Build the modal HTML
+                let modalHtml = '';
+                
+                // 1. Highlighted Reports (Governor & Risk)
+                modalHtml += renderReport('Investment Memo (Governor)', state.governor_full_memo);
+                modalHtml += renderReport('Risk Assessment', state.risk_full_report);
+
+                // 2. Specialist Agent Breakdown
+                modalHtml += '<h2 class="text-2xl font-bold text-white mt-12 mb-4 border-b border-gray-600 pb-2">Specialist Agent Breakdown</h2>';
+                
+                const specialistReports = [
+                    { title: 'Analyst Agent Report', content: state.analyst_agent_report },
+                    { title: 'Social Agent Report', content: state.social_agent_report },
+                    { title: 'SEC Agent Report', content: state.sec_agent_report },
+                    { title: 'News Agent Report', content: state.news_agent_report },
+                    { title: 'Chart Agent Report', content: state.chart_agent_report }
+                ];
+
+                specialistReports.forEach(report => {
+                    // Use a simpler render for the summaries
+                    const htmlContent = markdownConverter.makeHtml(report.content);
+                    modalHtml += `
+                        <div class="mb-6 p-6 bg-gray-700 rounded-lg shadow-inner">
+                            <h3 class="text-xl font-semibold text-white mb-3">${report.title}</h3>
+                            <div class="markdown-body">${htmlContent}</div>
+                        </div>
+                    `;
+                });
+
+                modalBody.innerHTML = modalHtml;
+                
+            } catch (error) {
+                console.error('Failed to load full report:', error);
+                modalTitle.textContent = 'Error';
+                modalBody.innerHTML = `<p class="text-red-400">${error.message}</p>`;
+            }
+        }
+
+        // --- UI Helper Functions ---
+
+        function showLoader() {
+            resultsContainer.classList.remove('hidden');
+            loader.classList.remove('hidden');
+            errorDisplay.classList.add('hidden');
+            resultsDisplay.classList.add('hidden');
+        }
+
+        function hideLoader() {
+            loader.classList.add('hidden');
+        }
+
+        function showError(message) {
+            resultsContainer.classList.remove('hidden');
+            errorDisplay.classList.remove('hidden');
+            resultsDisplay.classList.add('hidden');
+            errorMessage.textContent = message;
+        }
+
+        function showResults(data, ticker) {
+            resultsContainer.classList.remove('hidden');
+            errorDisplay.classList.add('hidden');
+            resultsDisplay.classList.remove('hidden');
+            governorSummary.textContent = data.governor_summary;
+            riskSummary.textContent = data.risk_summary;
+
+            // Wire up the breakdown button
+            breakdownButton.onclick = () => loadFullReport(ticker);
+        }
+
+        function showModal() {
+            modal.classList.remove('opacity-0', 'pointer-events-none');
+            modalContent.classList.remove('scale-95');
+            modalBody.scrollTop = 0; // Scroll to top when opening
+        }
+
+        function hideModal() {
+            modal.classList.add('opacity-0', 'pointer-events-none');
+            modalContent.classList.add('scale-95');
+        }
+
+        // --- Initial Load ---
+        document.addEventListener('DOMContentLoaded', loadRecentAnalyses);
+
+    </script>
+</body>
+</html>
+
