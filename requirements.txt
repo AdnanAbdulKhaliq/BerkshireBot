@@ -24,6 +24,7 @@ uvicorn[standard]>=0.32.0
 
 # Utilities
 requests>=2.31.0
+matplotlib>=3.7.0
 
 # Financial Data APIs
 yfinance==0.2.40

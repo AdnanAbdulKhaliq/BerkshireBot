@@ -12,7 +12,6 @@ import argparse
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any
-import jsonify
 from flask import Request
 
 # Import the orchestrator and *all its components*
@@ -29,6 +28,14 @@ try:
         governor_agent_node,
         risk_assessment_node,
     )
+
+    # Import the actual agent functions to get their raw return values
+    from sec_agent import run_sec_agent
+    from news_agent import analyze_company_sentiment
+    from social_agent import run_social_agent
+    from analyst_agent import run_analyst_agent
+    from governor_agent import run_governor_agent
+    from risk_assessment_agent import run_risk_assessment_agent
 except ImportError as e:
     print(f"❌ Error: Could not import from orchestrator.py: {e}")
     print(
@@ -340,6 +347,33 @@ def start_api_server(host="0.0.0.0", port=8000):
     setup_directories()
 
     # Request/Response Models
+    class TickerRequest(BaseModel):
+        ticker: str
+
+    class AgentResponse(BaseModel):
+        status: str
+        ticker: str
+        agent: str
+        summary: str | None = None
+        detailed: str | None = None
+        timestamp: str
+
+    class GovernorRequest(BaseModel):
+        ticker: str
+        sec_summary: str | None = None
+        news_summary: str | None = None
+        social_summary: str | None = None
+        chart_summary: str | None = None
+        analyst_summary: str | None = None
+
+    class GovernorResponse(BaseModel):
+        status: str
+        ticker: str
+        agent: str
+        summary: str | None = None
+        full_memo: str | None = None
+        timestamp: str
+
     class AnalyzeRequest(BaseModel):
         ticker: str
 
@@ -381,6 +415,150 @@ def start_api_server(host="0.0.0.0", port=8000):
         report_type: str
         content: str | None
 
+    # --- INDIVIDUAL AGENT ENDPOINTS ---
+
+    @app.post("/api/agents/sec")
+    async def run_sec_agent_endpoint(request: TickerRequest):
+        """Run SEC Agent for a ticker and return the raw agent response."""
+        ticker = request.ticker.upper()
+
+        if not ticker:
+            raise HTTPException(status_code=400, detail="No ticker provided")
+
+        try:
+            # Call the agent function directly to get raw response
+            result = run_sec_agent(ticker, save_to_file=True)
+            return result
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/api/agents/news")
+    async def run_news_agent_endpoint(request: TickerRequest):
+        """Run News Agent for a ticker and return the raw agent response."""
+        ticker = request.ticker.upper()
+
+        if not ticker:
+            raise HTTPException(status_code=400, detail="No ticker provided")
+
+        try:
+            # Call the agent function directly
+            result = analyze_company_sentiment(
+                ticker=ticker, max_articles=15, lookback_days=7, verbose=True
+            )
+            return result
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/api/agents/social")
+    async def run_social_agent_endpoint(request: TickerRequest):
+        """Run Social Sentiment Agent for a ticker and return the raw agent response."""
+        ticker = request.ticker.upper()
+
+        if not ticker:
+            raise HTTPException(status_code=400, detail="No ticker provided")
+
+        try:
+            # Call the agent function directly
+            result = run_social_agent(ticker, save_to_file=True)
+            return result
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/api/agents/chart")
+    async def run_chart_agent_endpoint(request: TickerRequest):
+        """Run Chart/Technical Analysis Agent for a ticker and return the raw agent response."""
+        ticker = request.ticker.upper()
+
+        if not ticker:
+            raise HTTPException(status_code=400, detail="No ticker provided")
+
+        try:
+            # Chart agent is placeholder, so we'll use the node function
+            state: AnalystSwarmState = {"ticker": ticker}
+            result = chart_agent_node(state)
+
+            # Return a dictionary with the chart summary and detailed
+            return {
+                "ticker": ticker,
+                "agent": "chart",
+                "summary": result.get("chart_agent_summary"),
+                "detailed": result.get("chart_agent_detailed"),
+                "status": result.get("chart_agent_status", "success"),
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/api/agents/analyst")
+    async def run_analyst_agent_endpoint(request: TickerRequest):
+        """Run Professional Analyst Ratings Agent for a ticker and return the raw agent response."""
+        ticker = request.ticker.upper()
+
+        if not ticker:
+            raise HTTPException(status_code=400, detail="No ticker provided")
+
+        try:
+            # Call the agent function directly
+            result = run_analyst_agent(ticker, save_to_file=True)
+            return result
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/api/agents/governor")
+    async def run_governor_agent_endpoint(request: GovernorRequest):
+        """Run Governor Agent to synthesize reports from other agents and return the raw agent response."""
+        ticker = request.ticker.upper()
+
+        if not ticker:
+            raise HTTPException(status_code=400, detail="No ticker provided")
+
+        try:
+            # Build agent_reports dict as expected by run_governor_agent
+            agent_reports = {
+                "SEC Agent": request.sec_summary or "Not available",
+                "News Agent": request.news_summary or "Not available",
+                "Social Agent": request.social_summary or "Not available",
+                "Chart Agent": request.chart_summary or "Not available",
+                "Analyst Agent": request.analyst_summary or "Not available",
+            }
+
+            # Call the agent function directly
+            result = run_governor_agent(ticker, agent_reports, save_to_file=True)
+            return result
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/api/agents/risk")
+    async def run_risk_agent_endpoint(request: GovernorRequest):
+        """Run Risk Assessment Agent on Governor's memo and return the raw agent response."""
+        ticker = request.ticker.upper()
+
+        if not ticker:
+            raise HTTPException(status_code=400, detail="No ticker provided")
+
+        try:
+            # Build agent_reports dict for governor
+            agent_reports = {
+                "SEC Agent": request.sec_summary or "Not available",
+                "News Agent": request.news_summary or "Not available",
+                "Social Agent": request.social_summary or "Not available",
+                "Chart Agent": request.chart_summary or "Not available",
+                "Analyst Agent": request.analyst_summary or "Not available",
+            }
+
+            # First run governor to get the memo
+            gov_result = run_governor_agent(ticker, agent_reports, save_to_file=False)
+
+            # Get the memo from governor result
+            governor_memo = gov_result.get("detailed_report", "")
+
+            # Run risk assessment with the memo
+            result = run_risk_assessment_agent(ticker, governor_memo, save_to_file=True)
+            return result
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    # --- ORCHESTRATED ANALYSIS ENDPOINTS ---
+
     @app.post("/api/analyze", response_model=AnalyzeResponse)
     async def analyze(request: AnalyzeRequest, background_tasks: BackgroundTasks):
         """Analyze a stock ticker."""
@@ -406,23 +584,21 @@ def start_api_server(host="0.0.0.0", port=8000):
             raise HTTPException(status_code=500, detail=str(e))
 
     # --- NEW ENDPOINT: MC ROLLOUT ---
-    @app.route('/api/mc_rollout', response_model=MC_RolloutResponse)
-    async def mc_rollout(request: Request):
+    @app.post("/api/mc_rollout", response_model=MC_RolloutResponse)
+    async def mc_rollout(request: MC_RolloutRequest):
         """Run a Monte Carlo simulation for a ticker."""
-        data = request.json
-        ticker = data.get('ticker').upper()
-        t = data.get('t', 10)
-        sims = data.get('sims', 1000)
+        ticker = request.ticker.upper()
+        t = request.t
+        sims = request.sims
         days, forecast = MC_sims(ticker, t, sims)
         return MC_RolloutResponse(
-            status='success',
+            status="success",
             ticker=ticker,
             t=t,
             sims=sims,
             days=days,
-            forecast=forecast.tolist()
+            forecast=forecast.tolist(),
         )
-
 
     # --- NEW ENDPOINT: RERUN AGENT ---
     @app.post("/api/rerun", response_model=RerunResponse)
@@ -532,11 +708,24 @@ def start_api_server(host="0.0.0.0", port=8000):
     print(f"\n📡 Server running on http://{host}:{port}")
     print(f"📚 Interactive API docs: http://{host}:{port}/docs")
     print(f"📖 Alternative docs: http://{host}:{port}/redoc")
-    print(f"\n📝 Available endpoints:")
+    print(f"\n📝 Individual Agent endpoints:")
+    print(f"  POST   /api/agents/sec         (Body: {{'ticker': 'TSLA'}})")
+    print(f"  POST   /api/agents/news        (Body: {{'ticker': 'TSLA'}})")
+    print(f"  POST   /api/agents/social      (Body: {{'ticker': 'TSLA'}})")
+    print(f"  POST   /api/agents/chart       (Body: {{'ticker': 'TSLA'}})")
+    print(f"  POST   /api/agents/analyst     (Body: {{'ticker': 'TSLA'}})")
+    print(
+        f"  POST   /api/agents/governor    (Body: {{'ticker': 'TSLA', 'sec_summary': '...', ...}})"
+    )
+    print(
+        f"  POST   /api/agents/risk        (Body: {{'ticker': 'TSLA', 'sec_summary': '...', ...}})"
+    )
+    print(f"\n📝 Orchestrated Analysis endpoints:")
     print(f"  POST   /api/analyze           (Body: {{'ticker': 'TSLA'}})")
     print(
         f"  POST   /api/rerun             (Body: {{'ticker': 'TSLA', 'agent': 'social'}})"
     )
+    print(f"\n📝 Report & State endpoints:")
     print(f"  GET    /api/analyses")
     print(f"  GET    /api/analysis/{{ticker}}")
     print(f"  GET    /api/report/summary/{{ticker}}/{{agent}}")

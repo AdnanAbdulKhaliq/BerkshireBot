@@ -354,7 +354,7 @@ summary_chain = summary_prompt | llm
 
 
 def analyze_company_sentiment(
-    company_name: str,
+    ticker: str,
     max_articles: int = 30,
     lookback_days: int = 7,
     verbose: bool = True,
@@ -371,6 +371,25 @@ def analyze_company_sentiment(
     Returns:
         Dictionary containing sentiment analysis results and summary
     """
+
+    TICKER_TO_NAME = {
+        "TSLA": "Tesla",
+        "AAPL": "Apple",
+        "MSFT": "Microsoft",
+        "GOOGL": "Google",
+        "AMZN": "Amazon",
+        "META": "Meta Facebook",
+        "NVDA": "Nvidia",
+        "AMD": "AMD",
+        "COIN": "Coinbase",
+        "PLTR": "Palantir",
+        "GME": "GameStop",
+        "AMC": "AMC",
+        "SPY": "SPY S&P500",
+        "QQQ": "QQQ Nasdaq",
+    }
+
+    company_name = TICKER_TO_NAME.get(ticker.upper(), ticker)
 
     if verbose:
         print(f"\n{'='*70}")

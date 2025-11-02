@@ -2,6 +2,26 @@
   "analyses": [
     {
       "ticker": "AAPL",
+      "timestamp": "2025-11-02 09:54:53",
+      "workflow_status": "completed_successfully",
+      "agents_completed": 5,
+      "governor_status": "success",
+      "risk_status": "success",
+      "errors": []
+    },
+    {
+      "ticker": "AAPL",
+      "timestamp": "2025-11-02 09:45:53",
+      "workflow_status": "failed",
+      "agents_completed": 0,
+      "governor_status": "pending",
+      "risk_status": "pending",
+      "errors": [
+        "Workflow error: At key 'ticker': Can receive only one value per step. Use an Annotated key to handle multiple values.\nFor troubleshooting, visit: https://python.langchain.com/docs/troubleshooting/errors/INVALID_CONCURRENT_GRAPH_UPDATE"
+      ]
+    },
+    {
+      "ticker": "AAPL",
       "timestamp": "2025-11-02 09:30:24",
       "workflow_status": "failed",
       "agents_completed": 0,

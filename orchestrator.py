@@ -123,15 +123,11 @@ def with_retry(
     """Decorator to add retry logic to agent functions."""
 
     def decorator(agent_func: Callable) -> Callable:
-        def wrapper(state: AnalystSwarmState) -> AnalystSwarmState:
+        def wrapper(state: AnalystSwarmState) -> dict:
             attempts_key = f"{agent_name.lower().replace(' ', '_')}_attempts"
-            state.setdefault(attempts_key, 0)  # Ensure key exists
 
             for attempt in range(max_retries + 1):
                 try:
-                    # Update attempt counter
-                    state[attempts_key] = attempt + 1
-
                     if attempt > 0:
                         delay = min(
                             base_delay * (exponential_base ** (attempt - 1)), max_delay
@@ -146,29 +142,28 @@ def with_retry(
                         time.sleep(delay)
 
                     # Execute the agent function
-                    # We pass a copy to avoid partial updates on failure
-                    result_state = agent_func(state.copy())
+                    result_dict = agent_func(state)
+
+                    # Add attempt counter to the result
+                    result_dict[attempts_key] = attempt + 1
 
                     # Check if successful
                     status_key = f"{agent_name.lower().replace(' ', '_')}_status"
-                    if result_state.get(status_key) == "success":
+                    if result_dict.get(status_key) == "success":
                         if attempt > 0:
                             print(
                                 f"✅ {agent_name}: Succeeded on retry attempt {attempt + 1}"
                             )
-                            result_state.setdefault("warnings", []).append(
+                            result_dict.setdefault("warnings", []).append(
                                 f"{agent_name} required {attempt + 1} attempt(s) to succeed"
                             )
-                        # Merge successful state back
-                        state.update(result_state)
-                        return state
+                        return result_dict
 
                     if attempt == max_retries:
                         print(
                             f"❌ {agent_name}: Failed after {max_retries + 1} attempts (no exception)"
                         )
-                        state.update(result_state)  # Record the failure state
-                        return state
+                        return result_dict
 
                 except Exception as e:
                     print(f"⚠️ {agent_name}: Attempt {attempt + 1} failed - {e}")
@@ -182,16 +177,19 @@ def with_retry(
                         )
 
                         error_msg = f"Error after {max_retries + 1} attempts: {str(e)}"
-                        state[status_key] = "failed"
-                        state[summary_key] = error_msg
-                        state[detailed_key] = error_msg
 
-                        state.setdefault("errors", []).append(
-                            f"{agent_name}: {str(e)} (after {max_retries + 1} attempts)"
-                        )
-                        return state
+                        return {
+                            attempts_key: attempt + 1,
+                            status_key: "failed",
+                            summary_key: error_msg,
+                            detailed_key: error_msg,
+                            "errors": [
+                                f"{agent_name}: {str(e)} (after {max_retries + 1} attempts)"
+                            ],
+                        }
 
-            return state  # Should be unreachable, but for safety
+            # Should be unreachable, but for safety
+            return {attempts_key: max_retries + 1}
 
         return wrapper
 
@@ -211,6 +209,7 @@ def sec_agent_node(state: AnalystSwarmState) -> dict:
             raise Exception(result["error"])
 
         print("✅ SEC Agent completed")
+        # Don't include 'ticker' in the return dict - it would conflict with the state
         return {
             "sec_agent_summary": result.get("summary_report", str(result)),
             "sec_agent_detailed": result.get(
@@ -252,6 +251,7 @@ def news_agent_node(state: AnalystSwarmState) -> dict:
 {result['dashboard_summary']}
         """
         print("✅ News Agent completed")
+        # Don't include 'ticker' - it conflicts with the state ticker field
         return {
             "news_agent_summary": summary,
             "news_agent_detailed": json.dumps(result, indent=2, default=str),
@@ -278,6 +278,7 @@ def social_agent_node(state: AnalystSwarmState) -> dict:
             raise Exception(result["error"])
 
         print("✅ Social Agent completed")
+        # Don't include 'ticker' - it conflicts with the state ticker field
         return {
             "social_agent_summary": result.get("summary_report", str(result)),
             "social_agent_detailed": result.get(
@@ -336,6 +337,7 @@ def analyst_agent_node(state: AnalystSwarmState) -> dict:
             raise Exception(result["error"])
 
         print("✅ Analyst Agent completed")
+        # Don't include 'ticker' - it conflicts with the state ticker field
         return {
             "analyst_agent_summary": result.get("summary_report", str(result)),
             "analyst_agent_detailed": result.get(
