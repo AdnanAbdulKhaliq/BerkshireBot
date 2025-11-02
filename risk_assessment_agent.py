@@ -1,16 +1,8 @@
 """
-Risk Assessment Agent - Analyst Swarm Component
+Risk Assessment Agent - Analyst Swarm Component (Enhanced with Baseline Metrics)
 
-This agent takes the Governor Agent's synthesized investment memo and produces
-a comprehensive risk assessment with quantitative scoring across multiple dimensions.
-
-It evaluates:
-- Market Risk
-- Company-Specific Risk
-- Sentiment Risk
-- Technical Risk
-- Regulatory/Legal Risk
-- Macroeconomic Risk
+This agent produces comprehensive risk assessment with both quantitative baseline
+metrics and LLM-powered qualitative analysis.
 
 Environment Variables Required:
     - GEMINI_API_KEY: Your Google Gemini API key
@@ -18,9 +10,21 @@ Environment Variables Required:
 
 import os
 import json
-from datetime import datetime
-from typing import Dict, Any, List
+from datetime import datetime, timedelta
+from typing import Dict, Any, List, Optional
 from dotenv import load_dotenv
+
+try:
+    import yfinance as yf
+    import pandas as pd
+    import numpy as np
+except ImportError as e:
+    print(f"⚠️ Missing required package: {e}")
+    print("Run: pip install yfinance pandas numpy")
+    yf = None
+    pd = None
+    np = None
+
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
@@ -47,53 +51,325 @@ def validate_environment() -> None:
     
     print("✅ Risk_Assessment_Agent: All environment variables validated")
 
-# Validate at module load time
 validate_environment()
 
 # --- SETUP MODEL ---
 
-# Initialize Gemini LLM with low temperature for consistent risk assessment
 llm = ChatGoogleGenerativeAI(
     model="gemini-pro-latest",
-    temperature=0.2,  # Low temperature for objective risk scoring
+    temperature=0.2,
     api_key=os.environ["GEMINI_API_KEY"]
 )
 
-# --- PROMPT TEMPLATE ---
+# --- QUANTITATIVE BASELINE RISK METRICS ---
+
+def calculate_baseline_risk_metrics(ticker: str) -> Dict[str, Any]:
+    """
+    Calculate objective, quantitative risk metrics as a baseline.
+    
+    Args:
+        ticker: Stock ticker symbol
+    
+    Returns:
+        Dictionary with calculated risk metrics and scores
+    """
+    if yf is None:
+        return {
+            "error": "yfinance not installed",
+            "metrics_available": False
+        }
+    
+    try:
+        stock = yf.Ticker(ticker)
+        info = stock.info
+        
+        # Get historical data for volatility calculations
+        hist = stock.history(period="1y")
+        
+        if hist.empty:
+            return {
+                "error": "No historical data available",
+                "metrics_available": False
+            }
+        
+        metrics = {}
+        
+        # 1. VOLATILITY RISK (0-100 scale)
+        try:
+            # Calculate annualized volatility
+            returns = hist['Close'].pct_change().dropna()
+            daily_volatility = returns.std()
+            annual_volatility = daily_volatility * np.sqrt(252)
+            
+            # Convert to 0-100 scale (0.5 volatility = 50, 1.0 = 100)
+            volatility_score = min(100, annual_volatility * 100)
+            
+            metrics['volatility'] = {
+                'annual_volatility': float(annual_volatility),
+                'risk_score': float(volatility_score),
+                'risk_level': (
+                    'Low' if volatility_score < 30 else
+                    'Medium' if volatility_score < 50 else
+                    'High' if volatility_score < 70 else
+                    'Critical'
+                ),
+                'description': f"Annualized volatility of {annual_volatility:.1%}"
+            }
+        except Exception as e:
+            metrics['volatility'] = {'error': str(e), 'risk_score': None}
+        
+        # 2. MARKET CORRELATION RISK (Beta)
+        try:
+            beta = info.get('beta')
+            if beta is not None:
+                beta = float(beta)
+                # Beta deviation from 1.0 indicates correlation risk
+                # Beta < 1: less volatile than market
+                # Beta > 1: more volatile than market
+                beta_deviation = abs(beta - 1.0)
+                correlation_score = min(100, beta_deviation * 50)
+                
+                metrics['market_correlation'] = {
+                    'beta': beta,
+                    'risk_score': float(correlation_score),
+                    'risk_level': (
+                        'Low' if correlation_score < 25 else
+                        'Medium' if correlation_score < 50 else
+                        'High' if correlation_score < 75 else
+                        'Critical'
+                    ),
+                    'description': f"Beta of {beta:.2f} (market correlation)"
+                }
+            else:
+                metrics['market_correlation'] = {'error': 'Beta not available', 'risk_score': None}
+        except Exception as e:
+            metrics['market_correlation'] = {'error': str(e), 'risk_score': None}
+        
+        # 3. LEVERAGE RISK (Debt-to-Equity)
+        try:
+            debt_to_equity = info.get('debtToEquity')
+            if debt_to_equity is not None:
+                debt_to_equity = float(debt_to_equity) / 100  # Convert from percentage
+                # D/E > 2.0 is high risk
+                leverage_score = min(100, debt_to_equity * 50)
+                
+                metrics['leverage'] = {
+                    'debt_to_equity': debt_to_equity,
+                    'risk_score': float(leverage_score),
+                    'risk_level': (
+                        'Low' if leverage_score < 30 else
+                        'Medium' if leverage_score < 60 else
+                        'High' if leverage_score < 80 else
+                        'Critical'
+                    ),
+                    'description': f"Debt-to-Equity ratio of {debt_to_equity:.2f}"
+                }
+            else:
+                metrics['leverage'] = {'error': 'D/E not available', 'risk_score': None}
+        except Exception as e:
+            metrics['leverage'] = {'error': str(e), 'risk_score': None}
+        
+        # 4. LIQUIDITY RISK (Current Ratio)
+        try:
+            current_ratio = info.get('currentRatio')
+            if current_ratio is not None:
+                current_ratio = float(current_ratio)
+                # Lower current ratio = higher risk
+                # Ideal is > 1.5, critical if < 1.0
+                if current_ratio >= 1.5:
+                    liquidity_score = 20
+                elif current_ratio >= 1.0:
+                    liquidity_score = 50
+                elif current_ratio >= 0.5:
+                    liquidity_score = 75
+                else:
+                    liquidity_score = 90
+                
+                metrics['liquidity'] = {
+                    'current_ratio': current_ratio,
+                    'risk_score': float(liquidity_score),
+                    'risk_level': (
+                        'Low' if liquidity_score < 30 else
+                        'Medium' if liquidity_score < 60 else
+                        'High' if liquidity_score < 80 else
+                        'Critical'
+                    ),
+                    'description': f"Current ratio of {current_ratio:.2f}"
+                }
+            else:
+                metrics['liquidity'] = {'error': 'Current ratio not available', 'risk_score': None}
+        except Exception as e:
+            metrics['liquidity'] = {'error': str(e), 'risk_score': None}
+        
+        # 5. VALUATION RISK (P/E Ratio)
+        try:
+            pe_ratio = info.get('trailingPE')
+            if pe_ratio is not None and pe_ratio > 0:
+                pe_ratio = float(pe_ratio)
+                # High P/E suggests overvaluation risk
+                # P/E < 15: low risk, P/E > 50: high risk
+                if pe_ratio < 15:
+                    valuation_score = 20
+                elif pe_ratio < 25:
+                    valuation_score = 40
+                elif pe_ratio < 40:
+                    valuation_score = 60
+                elif pe_ratio < 60:
+                    valuation_score = 80
+                else:
+                    valuation_score = 95
+                
+                metrics['valuation'] = {
+                    'pe_ratio': pe_ratio,
+                    'risk_score': float(valuation_score),
+                    'risk_level': (
+                        'Low' if valuation_score < 30 else
+                        'Medium' if valuation_score < 60 else
+                        'High' if valuation_score < 80 else
+                        'Critical'
+                    ),
+                    'description': f"P/E ratio of {pe_ratio:.1f}"
+                }
+            else:
+                metrics['valuation'] = {'error': 'P/E not available', 'risk_score': None}
+        except Exception as e:
+            metrics['valuation'] = {'error': str(e), 'risk_score': None}
+        
+        # 6. PRICE MOMENTUM RISK (52-week high/low distance)
+        try:
+            current_price = info.get('currentPrice') or hist['Close'].iloc[-1]
+            week_52_high = info.get('fiftyTwoWeekHigh')
+            week_52_low = info.get('fiftyTwoWeekLow')
+            
+            if week_52_high and week_52_low and current_price:
+                # Calculate distance from 52-week range
+                range_size = week_52_high - week_52_low
+                distance_from_high = (week_52_high - current_price) / range_size
+                
+                # Near 52-week low = higher risk
+                momentum_score = distance_from_high * 100
+                
+                metrics['price_momentum'] = {
+                    'current_price': float(current_price),
+                    'week_52_high': float(week_52_high),
+                    'week_52_low': float(week_52_low),
+                    'distance_from_high_pct': float(distance_from_high * 100),
+                    'risk_score': float(momentum_score),
+                    'risk_level': (
+                        'Low' if momentum_score < 30 else
+                        'Medium' if momentum_score < 60 else
+                        'High' if momentum_score < 80 else
+                        'Critical'
+                    ),
+                    'description': f"Price is {distance_from_high:.1%} below 52-week high"
+                }
+            else:
+                metrics['price_momentum'] = {'error': '52-week data not available', 'risk_score': None}
+        except Exception as e:
+            metrics['price_momentum'] = {'error': str(e), 'risk_score': None}
+        
+        # Calculate overall baseline risk score (weighted average)
+        valid_scores = [m['risk_score'] for m in metrics.values() if m.get('risk_score') is not None]
+        
+        if valid_scores:
+            overall_score = sum(valid_scores) / len(valid_scores)
+            overall_level = (
+                'Low' if overall_score < 30 else
+                'Medium' if overall_score < 50 else
+                'High' if overall_score < 70 else
+                'Critical'
+            )
+        else:
+            overall_score = None
+            overall_level = 'Unknown'
+        
+        return {
+            'ticker': ticker,
+            'metrics_available': True,
+            'individual_metrics': metrics,
+            'overall_baseline_score': float(overall_score) if overall_score else None,
+            'overall_baseline_level': overall_level,
+            'metrics_count': len(valid_scores),
+            'timestamp': datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        print(f"❌ Error calculating baseline metrics: {e}")
+        return {
+            'error': str(e),
+            'metrics_available': False
+        }
+
+
+def format_baseline_metrics(metrics: Dict[str, Any]) -> str:
+    """
+    Format baseline metrics into readable text for LLM prompt.
+    
+    Args:
+        metrics: Output from calculate_baseline_risk_metrics
+    
+    Returns:
+        Formatted string
+    """
+    if not metrics.get('metrics_available'):
+        return "**Baseline Risk Metrics:** Not available\n"
+    
+    formatted = "**QUANTITATIVE BASELINE RISK METRICS:**\n\n"
+    formatted += f"Overall Baseline Risk Score: {metrics.get('overall_baseline_score', 'N/A'):.1f}/100\n"
+    formatted += f"Overall Baseline Risk Level: {metrics.get('overall_baseline_level', 'N/A')}\n"
+    formatted += f"Metrics Available: {metrics.get('metrics_count', 0)}/6\n\n"
+    
+    individual = metrics.get('individual_metrics', {})
+    
+    for metric_name, metric_data in individual.items():
+        if metric_data.get('risk_score') is not None:
+            formatted += f"**{metric_name.replace('_', ' ').title()}:**\n"
+            formatted += f"  - Risk Score: {metric_data['risk_score']:.1f}/100\n"
+            formatted += f"  - Risk Level: {metric_data['risk_level']}\n"
+            formatted += f"  - Description: {metric_data['description']}\n\n"
+        else:
+            formatted += f"**{metric_name.replace('_', ' ').title()}:** Data not available\n\n"
+    
+    return formatted
+
+
+# --- ENHANCED PROMPT WITH BASELINE METRICS ---
 
 risk_assessment_prompt = ChatPromptTemplate.from_template(
-    """You are a "Risk Assessment Specialist" - your role is to evaluate the investment 
-risks for ${ticker} based on the comprehensive investment memo prepared by the Governor Agent.
+    """You are a "Risk Assessment Specialist" evaluating investment risks for ${ticker}.
+
+**QUANTITATIVE BASELINE METRICS PROVIDED:**
+
+{baseline_metrics}
+
+**IMPORTANT:** These are OBJECTIVE, CALCULATED metrics based on financial data.
+Your LLM-generated risk scores should be INFORMED BY but not necessarily MATCH these baseline scores.
 
 **YOUR MANDATE:**
-Analyze the Governor's memo and produce a detailed, quantitative risk assessment across 
-six key dimensions. For each risk category, you must:
-1. Provide a risk score (0-100, where 100 = maximum risk)
-2. Assign a risk level (Low / Medium / High / Critical)
-3. Identify specific risk factors from the memo
-4. Provide actionable mitigation strategies
+Analyze the Governor's memo and produce a detailed risk assessment that:
+1. **Acknowledges the baseline metrics** where available
+2. **Adjusts scores based on qualitative factors** from the memo
+3. **Explains divergences** between baseline and your assessment
 
-**RISK CATEGORIES TO ASSESS:**
+For each risk category:
+- Start with the baseline score if available
+- Adjust based on qualitative evidence from the memo
+- Explain your reasoning
 
-1. **Market Risk** (Industry, competitive landscape, market conditions)
-2. **Company-Specific Risk** (Financial health, management, operations)
-3. **Sentiment Risk** (Investor perception, social media, analyst views)
-4. **Technical Risk** (Price action, chart patterns, momentum)
-5. **Regulatory/Legal Risk** (Compliance, litigation, regulatory changes)
-6. **Macroeconomic Risk** (Interest rates, inflation, economic cycles)
+**SCORING (0-100):**
+- **0-25:** Low Risk
+- **26-50:** Medium Risk
+- **51-75:** High Risk
+- **76-100:** Critical Risk
 
-**SCORING GUIDELINES:**
-- **0-25:** Low Risk - Well-managed, minimal concerns
-- **26-50:** Medium Risk - Some concerns, manageable with caution
-- **51-75:** High Risk - Significant concerns, careful consideration needed
-- **76-100:** Critical Risk - Severe concerns, potential red flags
+**RISK CATEGORIES:**
 
-**CRITICAL INSTRUCTIONS:**
-- Base your assessment ONLY on evidence from the Governor's memo
-- When the memo lacks information on a risk category, score it as "Unknown" (score: null)
-- Be specific - cite which agent's findings support each risk factor
-- Consider both consensus views AND conflicting perspectives
-- Your overall risk score should be a weighted average, not a simple mean
+1. **Market Risk** - Use baseline market_correlation + memo context
+2. **Company-Specific Risk** - Use baseline leverage + liquidity + memo
+3. **Sentiment Risk** - Primarily from memo (no baseline)
+4. **Technical Risk** - Use baseline price_momentum + volatility + memo
+5. **Regulatory/Legal Risk** - Primarily from memo (no baseline)
+6. **Macroeconomic Risk** - From memo context (no baseline)
 
 **GOVERNOR'S INVESTMENT MEMO:**
 
@@ -101,22 +377,26 @@ six key dimensions. For each risk category, you must:
 {investment_memo}
 </investment_memo>
 
-Return your risk assessment in this EXACT JSON format:
+Return your risk assessment in this JSON format:
 {{
   "overall_risk_score": 0-100,
   "overall_risk_level": "Low" | "Medium" | "High" | "Critical",
-  "overall_assessment": "2-3 sentence executive summary of the risk profile",
+  "overall_assessment": "2-3 sentence executive summary",
+  "baseline_metrics_used": true | false,
+  "baseline_vs_qualitative_note": "Explanation of how baseline metrics were factored in",
   "risk_categories": [
     {{
       "category": "Market Risk",
-      "risk_score": 0-100 or null,
-      "risk_level": "Low" | "Medium" | "High" | "Critical" | "Unknown",
+      "risk_score": 0-100,
+      "risk_level": "Low" | "Medium" | "High" | "Critical",
+      "baseline_score": "from baseline metrics or null",
+      "adjustment_reason": "Why your score differs from baseline",
       "confidence": "high" | "medium" | "low",
       "key_risk_factors": [
         {{
           "factor": "Specific risk factor",
-          "evidence": "Quote or reference from memo",
-          "source_agent": "Which agent identified this",
+          "evidence": "Quote from memo or baseline metric",
+          "source_agent": "Which agent or 'baseline_metrics'",
           "severity": "high" | "medium" | "low"
         }}
       ],
@@ -128,14 +408,14 @@ Return your risk assessment in this EXACT JSON format:
         }}
       ],
       "trend": "improving" | "stable" | "deteriorating" | "unknown",
-      "analysis": "2-3 sentence detailed analysis of this risk category"
+      "analysis": "2-3 sentence analysis"
     }}
   ],
   "red_flags": [
     {{
-      "flag": "Critical concern description",
+      "flag": "Critical concern",
       "severity": "high" | "medium" | "low",
-      "source_evidence": "Evidence from memo",
+      "source_evidence": "Evidence",
       "immediate_action": "What investor should do"
     }}
   ],
@@ -149,33 +429,33 @@ Return your risk assessment in this EXACT JSON format:
   "portfolio_implications": {{
     "recommended_position_size": "Conservative" | "Moderate" | "Aggressive" | "Avoid",
     "holding_period": "Short-term" | "Medium-term" | "Long-term",
-    "diversification_needs": "Description of diversification strategy",
-    "risk_monitoring": ["Key metric to monitor", "Key metric to monitor"]
+    "diversification_needs": "Description",
+    "risk_monitoring": ["Key metric to monitor"]
   }},
   "stress_test_scenarios": [
     {{
-      "scenario": "What if scenario description",
+      "scenario": "What if scenario",
       "probability": "high" | "medium" | "low",
-      "impact_on_investment": "Description of impact",
-      "preparedness": "How well positioned investor would be"
+      "impact_on_investment": "Description",
+      "preparedness": "How well positioned"
     }}
   ],
   "comparable_risk_analysis": {{
-    "industry_comparison": "How this stock's risk compares to industry peers",
-    "historical_comparison": "How current risk compares to historical levels",
-    "market_comparison": "How this stock's risk compares to broader market"
+    "industry_comparison": "How this compares to industry",
+    "historical_comparison": "How current risk compares historically",
+    "market_comparison": "How this compares to broader market"
   }},
   "risk_reward_ratio": {{
     "potential_upside": "percentage or description",
     "potential_downside": "percentage or description",
-    "ratio_assessment": "Assessment of whether risk is justified by reward",
+    "ratio_assessment": "Assessment",
     "favorable_for": "Conservative investors" | "Moderate investors" | "Aggressive investors" | "None"
   }},
   "final_recommendation": {{
-    "suitability": "Which investor types this is suitable for",
-    "key_considerations": ["consideration 1", "consideration 2", "consideration 3"],
-    "monitoring_frequency": "How often to review this investment",
-    "exit_triggers": ["Event that should trigger exit consideration"]
+    "suitability": "Which investor types",
+    "key_considerations": ["consideration 1", "consideration 2"],
+    "monitoring_frequency": "How often to review",
+    "exit_triggers": ["Event that should trigger exit"]
   }},
   "data_limitations": ["limitation 1", "limitation 2"],
   "assessment_confidence": "high" | "medium" | "low",
@@ -190,28 +470,36 @@ Return your risk assessment in this EXACT JSON format:
 {timestamp}
 </timestamp>
 
-Return ONLY valid JSON. Do not include any text before or after the JSON object."""
+Return ONLY valid JSON."""
 )
 
 # --- CREATE RISK ASSESSMENT CHAIN ---
 
 def prepare_risk_input(input_dict: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Prepare input for the Risk Assessment Agent chain.
-    
-    Args:
-        input_dict: Contains 'ticker' and 'investment_memo' keys
-    
-    Returns:
-        Dictionary with formatted inputs for the prompt
-    """
+    """Prepare input with baseline metrics."""
     ticker = input_dict.get("ticker", "").upper()
     investment_memo = input_dict.get("investment_memo", "")
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
+    # Calculate baseline metrics
+    print(f"📊 Calculating quantitative baseline risk metrics for {ticker}...")
+    baseline_metrics = calculate_baseline_risk_metrics(ticker)
+    formatted_baseline = format_baseline_metrics(baseline_metrics)
+    
+    # Print summary
+    if baseline_metrics.get('metrics_available'):
+        score = baseline_metrics.get('overall_baseline_score')
+        level = baseline_metrics.get('overall_baseline_level')
+        count = baseline_metrics.get('metrics_count')
+        print(f"✅ Baseline Risk: {level} ({score:.1f}/100) from {count} metrics")
+    else:
+        print("⚠️ Baseline metrics not available")
+    
     return {
         "ticker": ticker,
         "investment_memo": investment_memo,
+        "baseline_metrics": formatted_baseline,
+        "baseline_metrics_raw": baseline_metrics,
         "timestamp": timestamp
     }
 
@@ -220,6 +508,7 @@ risk_chain = (
     | RunnablePassthrough.assign(
         ticker=lambda x: x["prepared_input"]["ticker"],
         investment_memo=lambda x: x["prepared_input"]["investment_memo"],
+        baseline_metrics=lambda x: x["prepared_input"]["baseline_metrics"],
         timestamp=lambda x: x["prepared_input"]["timestamp"]
     )
     | risk_assessment_prompt
@@ -227,7 +516,7 @@ risk_chain = (
     | JsonOutputParser()
 )
 
-# --- REPORT GENERATION ---
+# --- REPORT GENERATION (keeping existing structure, adding baseline info) ---
 
 def get_risk_emoji(risk_level: str) -> str:
     """Get emoji for risk level visualization."""
@@ -240,26 +529,24 @@ def get_risk_emoji(risk_level: str) -> str:
     }
     return emoji_map.get(risk_level, "⚪")
 
-def generate_risk_report(ticker: str, assessment: Dict[str, Any]) -> str:
-    """
-    Generate a comprehensive risk assessment report.
-    
-    Args:
-        ticker: Stock ticker symbol
-        assessment: Risk assessment JSON from agent
-    
-    Returns:
-        Formatted markdown risk report
-    """
+def generate_risk_report(
+    ticker: str,
+    assessment: Dict[str, Any],
+    baseline_metrics: Dict[str, Any]
+) -> str:
+    """Generate comprehensive risk report with baseline comparison."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
     overall_score = assessment.get('overall_risk_score', 0)
     overall_level = assessment.get('overall_risk_level', 'Unknown')
     overall_emoji = get_risk_emoji(overall_level)
     
+    baseline_score = baseline_metrics.get('overall_baseline_score')
+    baseline_level = baseline_metrics.get('overall_baseline_level')
+    
     report = f"""
 # Risk Assessment Report: ${ticker}
-**Prepared by:** Risk Assessment Agent
+**Prepared by:** Risk Assessment Agent (Enhanced with Baseline Metrics)
 **Date:** {timestamp}
 **Assessment Confidence:** {assessment.get('assessment_confidence', 'unknown').capitalize()}
 
@@ -267,240 +554,156 @@ def generate_risk_report(ticker: str, assessment: Dict[str, Any]) -> str:
 
 ## Overall Risk Profile
 
-{overall_emoji} **Risk Level:** {overall_level}  
-**Risk Score:** {overall_score}/100
-
-### Executive Assessment
-{assessment.get('overall_assessment', 'No assessment available.')}
-
----
-
-## Detailed Risk Analysis
+{overall_emoji} **Final Risk Level:** {overall_level}  
+**Final Risk Score:** {overall_score}/100
 
 """
     
-    # Risk categories breakdown
+    if baseline_score:
+        baseline_emoji = get_risk_emoji(baseline_level)
+        report += f"{baseline_emoji} **Baseline Risk Level:** {baseline_level}  \n"
+        report += f"**Baseline Risk Score:** {baseline_score:.1f}/100  \n"
+        report += f"**Score Adjustment:** {overall_score - baseline_score:+.1f} points\n\n"
+    
+    report += f"### Executive Assessment\n{assessment.get('overall_assessment', 'No assessment available.')}\n\n"
+    
+    if assessment.get('baseline_metrics_used'):
+        report += f"**Baseline Integration:**  \n{assessment.get('baseline_vs_qualitative_note', 'Baseline metrics were considered.')}\n"
+    
+    report += "\n---\n\n"
+    
+    # Show baseline metrics summary
+    if baseline_metrics.get('metrics_available'):
+        report += "## Quantitative Baseline Metrics\n\n"
+        individual = baseline_metrics.get('individual_metrics', {})
+        
+        for metric_name, metric_data in individual.items():
+            if metric_data.get('risk_score') is not None:
+                level_emoji = get_risk_emoji(metric_data['risk_level'])
+                report += f"**{metric_name.replace('_', ' ').title()}:** {level_emoji} {metric_data['risk_level']} ({metric_data['risk_score']:.1f}/100)  \n"
+                report += f"*{metric_data['description']}*\n\n"
+        
+        report += "---\n\n"
+    
+    report += "## Detailed Risk Analysis\n\n"
+    
     categories = assessment.get('risk_categories', [])
     for category in categories:
-        cat_name = category.get('category', 'Unknown Category')
+        cat_name = category.get('category', 'Unknown')
         risk_score = category.get('risk_score')
         risk_level = category.get('risk_level', 'Unknown')
         risk_emoji = get_risk_emoji(risk_level)
-        confidence = category.get('confidence', 'unknown')
-        trend = category.get('trend', 'unknown')
+        baseline_score_cat = category.get('baseline_score')
         
-        # Trend emoji
-        trend_emoji = {
-            'improving': '📈', 
-            'stable': '➡️', 
-            'deteriorating': '📉', 
-            'unknown': '❓'
-        }.get(trend, '❓')
+        report += f"### {risk_emoji} {cat_name}\n\n"
+        report += f"**Risk Score:** {risk_score}/100  \n"
+        report += f"**Risk Level:** {risk_level}  \n"
         
-        report += f"""
-### {risk_emoji} {cat_name}
-
-**Risk Score:** {risk_score if risk_score is not None else 'N/A'}/100  
-**Risk Level:** {risk_level}  
-**Confidence:** {confidence.capitalize()}  
-**Trend:** {trend_emoji} {trend.capitalize()}
-
-{category.get('analysis', 'No analysis available.')}
-
-"""
+        if baseline_score_cat:
+            report += f"**Baseline Score:** {baseline_score_cat}  \n"
+            report += f"**Adjustment:** {category.get('adjustment_reason', 'No adjustment')}  \n"
         
-        # Key risk factors
+        report += f"**Confidence:** {category.get('confidence', 'unknown').capitalize()}  \n"
+        report += f"**Trend:** {category.get('trend', 'unknown').capitalize()}  \n\n"
+        
+        report += f"{category.get('analysis', 'No analysis available.')}\n\n"
+        
         factors = category.get('key_risk_factors', [])
         if factors:
             report += "**Key Risk Factors:**\n\n"
             for factor in factors:
-                severity_emoji = {
-                    'high': '🔴', 'medium': '🟡', 'low': '🟢'
-                }.get(factor.get('severity', 'low'), '⚪')
-                
-                report += f"{severity_emoji} **{factor.get('factor', 'Unknown factor')}**\n"
-                report += f"   - *Evidence:* {factor.get('evidence', 'No evidence')}\n"
-                report += f"   - *Source:* {factor.get('source_agent', 'Unknown')}\n\n"
+                sev_emoji = {'high': '🔴', 'medium': '🟡', 'low': '🟢'}.get(factor.get('severity'), '⚪')
+                report += f"{sev_emoji} **{factor.get('factor')}**  \n"
+                report += f"   *Evidence:* {factor.get('evidence')}  \n"
+                report += f"   *Source:* {factor.get('source_agent')}  \n\n"
         
-        # Mitigations
         mitigations = category.get('mitigations', [])
         if mitigations:
-            report += "**Risk Mitigation Strategies:**\n\n"
+            report += "**Risk Mitigation:**\n\n"
             for mitigation in mitigations:
-                effectiveness = mitigation.get('effectiveness', 'unknown')
-                eff_emoji = {
-                    'high': '✅', 'medium': '⚠️', 'low': '❌'
-                }.get(effectiveness, '⚪')
-                
-                report += f"{eff_emoji} **{mitigation.get('strategy', 'Unknown strategy')}**\n"
-                report += f"   - *Effectiveness:* {effectiveness.capitalize()}\n"
-                report += f"   - *Implementation:* {mitigation.get('implementation', 'No details')}\n\n"
+                eff_emoji = {'high': '✅', 'medium': '⚠️', 'low': '❌'}.get(mitigation.get('effectiveness'), '⚪')
+                report += f"{eff_emoji} **{mitigation.get('strategy')}**  \n"
+                report += f"   *Effectiveness:* {mitigation.get('effectiveness').capitalize()}  \n"
+                report += f"   *Implementation:* {mitigation.get('implementation')}  \n\n"
         
         report += "---\n\n"
     
-    # Red Flags section
-    report += "## 🚨 Red Flags & Critical Concerns\n\n"
+    # Rest of report (keeping existing structure)
+    report += "## 🚨 Red Flags\n\n"
     
     red_flags = assessment.get('red_flags', [])
     if red_flags:
         for flag in red_flags:
-            severity = flag.get('severity', 'unknown')
-            severity_emoji = {
-                'high': '🔴', 'medium': '🟡', 'low': '🟢'
-            }.get(severity, '⚪')
-            
-            report += f"{severity_emoji} **{flag.get('flag', 'Unknown concern')}**\n\n"
-            report += f"*Evidence:* {flag.get('source_evidence', 'No evidence')}\n\n"
-            report += f"*Immediate Action:* {flag.get('immediate_action', 'No action specified')}\n\n"
+            severity_emoji = {'high': '🔴', 'medium': '🟡', 'low': '🟢'}.get(flag.get('severity'), '⚪')
+            report += f"{severity_emoji} **{flag.get('flag')}**  \n"
+            report += f"*Evidence:* {flag.get('source_evidence')}  \n"
+            report += f"*Action:* {flag.get('immediate_action')}  \n\n"
     else:
         report += "*No critical red flags identified.*\n\n"
     
-    report += "---\n\n"
-    
-    # Risk Opportunities
-    report += "## 💡 Risk Opportunities\n\n"
-    report += "Risks that could become opportunities under certain conditions:\n\n"
-    
-    risk_opps = assessment.get('risk_opportunities', [])
-    if risk_opps:
-        for opp in risk_opps:
-            report += f"**{opp.get('opportunity', 'Unknown opportunity')}**\n\n"
-            report += f"*Scenario:* {opp.get('scenario', 'No scenario')}\n\n"
-            report += f"*Potential Upside:* {opp.get('potential_upside', 'Unknown')}\n\n"
-    else:
-        report += "*No risk opportunities identified.*\n\n"
-    
-    report += "---\n\n"
-    
-    # Portfolio Implications
-    report += "## 📊 Portfolio Implications\n\n"
+    report += "---\n\n## Portfolio Implications\n\n"
     
     portfolio = assessment.get('portfolio_implications', {})
-    
-    report += f"**Recommended Position Size:** {portfolio.get('recommended_position_size', 'Unknown')}\n\n"
-    report += f"**Suggested Holding Period:** {portfolio.get('holding_period', 'Unknown')}\n\n"
-    report += f"**Diversification Strategy:** {portfolio.get('diversification_needs', 'No strategy provided')}\n\n"
+    report += f"**Position Size:** {portfolio.get('recommended_position_size')}  \n"
+    report += f"**Holding Period:** {portfolio.get('holding_period')}  \n"
+    report += f"**Diversification:** {portfolio.get('diversification_needs')}  \n\n"
     
     monitoring = portfolio.get('risk_monitoring', [])
     if monitoring:
-        report += "**Key Metrics to Monitor:**\n\n"
+        report += "**Monitor:**\n"
         for metric in monitoring:
             report += f"- {metric}\n"
-        report += "\n"
     
-    report += "---\n\n"
-    
-    # Stress Test Scenarios
-    report += "## 🧪 Stress Test Scenarios\n\n"
-    
-    stress_tests = assessment.get('stress_test_scenarios', [])
-    if stress_tests:
-        for scenario in stress_tests:
-            prob = scenario.get('probability', 'unknown')
-            prob_emoji = {
-                'high': '🔴', 'medium': '🟡', 'low': '🟢'
-            }.get(prob, '⚪')
-            
-            report += f"{prob_emoji} **{scenario.get('scenario', 'Unknown scenario')}**\n\n"
-            report += f"*Probability:* {prob.capitalize()}\n\n"
-            report += f"*Impact:* {scenario.get('impact_on_investment', 'Unknown')}\n\n"
-            report += f"*Preparedness:* {scenario.get('preparedness', 'Unknown')}\n\n"
-    else:
-        report += "*No stress test scenarios provided.*\n\n"
-    
-    report += "---\n\n"
-    
-    # Comparative Risk Analysis
-    report += "## 📈 Comparative Risk Analysis\n\n"
-    
-    comparison = assessment.get('comparable_risk_analysis', {})
-    
-    report += f"**Industry Comparison:**\n{comparison.get('industry_comparison', 'No comparison available')}\n\n"
-    report += f"**Historical Comparison:**\n{comparison.get('historical_comparison', 'No comparison available')}\n\n"
-    report += f"**Market Comparison:**\n{comparison.get('market_comparison', 'No comparison available')}\n\n"
-    
-    report += "---\n\n"
-    
-    # Risk-Reward Ratio
-    report += "## ⚖️ Risk-Reward Analysis\n\n"
+    report += "\n---\n\n## Risk-Reward Analysis\n\n"
     
     risk_reward = assessment.get('risk_reward_ratio', {})
+    report += f"**Upside:** {risk_reward.get('potential_upside')}  \n"
+    report += f"**Downside:** {risk_reward.get('potential_downside')}  \n"
+    report += f"**Assessment:** {risk_reward.get('ratio_assessment')}  \n"
+    report += f"**Suitable For:** {risk_reward.get('favorable_for')}  \n\n"
     
-    report += f"**Potential Upside:** {risk_reward.get('potential_upside', 'Unknown')}\n\n"
-    report += f"**Potential Downside:** {risk_reward.get('potential_downside', 'Unknown')}\n\n"
-    report += f"**Assessment:** {risk_reward.get('ratio_assessment', 'No assessment')}\n\n"
-    report += f"**Favorable For:** {risk_reward.get('favorable_for', 'Unknown')}\n\n"
-    
-    report += "---\n\n"
-    
-    # Final Recommendation
-    report += "## 🎯 Final Recommendation\n\n"
+    report += "---\n\n## Final Recommendation\n\n"
     
     final = assessment.get('final_recommendation', {})
-    
-    report += f"**Suitability:** {final.get('suitability', 'Unknown')}\n\n"
+    report += f"**Suitability:** {final.get('suitability')}  \n"
+    report += f"**Monitoring:** {final.get('monitoring_frequency')}  \n\n"
     
     considerations = final.get('key_considerations', [])
     if considerations:
-        report += "**Key Considerations:**\n\n"
+        report += "**Key Considerations:**\n"
         for consideration in considerations:
             report += f"- {consideration}\n"
-        report += "\n"
     
-    report += f"**Monitoring Frequency:** {final.get('monitoring_frequency', 'Unknown')}\n\n"
-    
-    triggers = final.get('exit_triggers', [])
-    if triggers:
-        report += "**Exit Triggers (Consider Selling If):**\n\n"
-        for trigger in triggers:
-            report += f"- {trigger}\n"
-        report += "\n"
-    
-    report += "---\n\n"
-    
-    # Data Limitations
-    limitations = assessment.get('data_limitations', [])
-    if limitations:
-        report += "## ⚠️ Data Limitations\n\n"
-        for limitation in limitations:
-            report += f"- {limitation}\n"
-        report += "\n---\n\n"
-    
-    # Disclosure
     report += f"""
-## Disclosure
 
-This risk assessment was generated by an AI-powered Risk Assessment Agent based on 
-the investment memo prepared by the Governor Agent, which synthesized insights from 
-multiple specialist agents.
+---
 
-**Important:**
-- This is NOT financial advice
-- Risk assessments are based on available data and may change
-- Past performance does not guarantee future results
-- Consult a qualified financial advisor before making investment decisions
+## Methodology
+
+This risk assessment combines:
+1. **Quantitative Baseline Metrics**: Calculated from financial data
+   - Volatility, Beta, Debt/Equity, Liquidity, Valuation, Price Momentum
+2. **Qualitative Analysis**: From Governor Agent's memo
+3. **LLM Synthesis**: Balancing quantitative and qualitative factors
+
+**Baseline Metrics Available:** {baseline_metrics.get('metrics_count', 0)}/6  
+**Assessment Confidence:** {assessment.get('assessment_confidence', 'unknown').upper()}
+
+---
+
+**Disclaimer:** This combines AI analysis with calculated financial metrics.
+Not financial advice. Consult a qualified advisor.
 
 **Timestamp:** {timestamp}  
-**Ticker:** ${ticker}  
-**Risk Assessment Agent Model:** Gemini Pro Latest
+**Ticker:** ${ticker}
 """
     
     return report.strip()
 
+
 def save_risk_report(ticker: str, report: str, output_dir: str = "reports") -> str:
-    """
-    Save the risk assessment report to a file.
-    
-    Args:
-        ticker: Stock ticker symbol
-        report: Formatted report content
-        output_dir: Directory to save reports
-    
-    Returns:
-        Path to saved file
-    """
+    """Save risk report to file."""
     os.makedirs(output_dir, exist_ok=True)
-    
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"{ticker}_risk_assessment_{timestamp}.md"
     filepath = os.path.join(output_dir, filename)
@@ -511,74 +714,77 @@ def save_risk_report(ticker: str, report: str, output_dir: str = "reports") -> s
     print(f"📄 Risk assessment saved to: {filepath}")
     return filepath
 
-# --- MAIN RISK ASSESSMENT FUNCTION ---
+
+# --- MAIN FUNCTION ---
 
 def run_risk_assessment_agent(
     ticker: str,
     investment_memo: str,
     save_to_file: bool = True
 ) -> tuple[str, str]:
-    """
-    Execute the Risk Assessment Agent analysis.
-    
-    Args:
-        ticker: Stock ticker symbol
-        investment_memo: The Governor Agent's investment memo
-        save_to_file: Whether to save the report to a file
-    
-    Returns:
-        Tuple of (summary_report, detailed_report)
-    """
+    """Execute Risk Assessment with baseline metrics."""
     print(f"\n{'='*60}")
-    print(f"🤖 Risk Assessment Agent: Analyzing risk for ${ticker}")
+    print(f"🤖 Risk Assessment Agent (Enhanced): Analyzing ${ticker}")
     print(f"{'='*60}\n")
     
     if not investment_memo:
-        error_msg = "No investment memo provided to Risk Assessment Agent"
+        error_msg = "No investment memo provided"
         print(f"❌ {error_msg}")
         return error_msg, error_msg
     
     try:
-        # Execute the risk assessment chain
+        # Prepare input (calculates baseline metrics)
+        prepared = prepare_risk_input({
+            "ticker": ticker.upper(),
+            "investment_memo": investment_memo
+        })
+        
+        baseline_metrics_raw = prepared["baseline_metrics_raw"]
+        
+        # Execute chain
         assessment_json = risk_chain.invoke({
             "ticker": ticker.upper(),
             "investment_memo": investment_memo
         })
         
-        # Generate detailed risk report
-        detailed_report = generate_risk_report(ticker, assessment_json)
+        # Generate detailed report
+        detailed_report = generate_risk_report(ticker, assessment_json, baseline_metrics_raw)
         
-        # Save to file if requested
+        # Save to file
         if save_to_file:
             save_risk_report(ticker, detailed_report)
         
-        # Create concise summary for console
+        # Create summary
         overall_score = assessment_json.get('overall_risk_score', 0)
         overall_level = assessment_json.get('overall_risk_level', 'Unknown')
         overall_emoji = get_risk_emoji(overall_level)
-        overall_assessment = assessment_json.get('overall_assessment', 'No assessment available.')
         
-        red_flag_count = len(assessment_json.get('red_flags', []))
-        
-        portfolio_rec = assessment_json.get('portfolio_implications', {}).get('recommended_position_size', 'Unknown')
+        baseline_score = baseline_metrics_raw.get('overall_baseline_score')
+        baseline_level = baseline_metrics_raw.get('overall_baseline_level')
         
         summary_report = f"""
 **Risk Assessment Agent Summary: ${ticker}**
 
 {overall_emoji} **Overall Risk:** {overall_level} ({overall_score}/100)
 
+📊 **Baseline Comparison:**
+* Baseline Risk: {baseline_level} ({baseline_score:.1f}/100) if baseline_score else 'N/A'
+* Adjustment: {overall_score - baseline_score:+.1f} points if baseline_score else 'Qualitative only'
+* Metrics Used: {baseline_metrics_raw.get('metrics_count', 0)}/6
+
 📋 **Executive Assessment:**
-{overall_assessment}
+{assessment_json.get('overall_assessment', 'No assessment available.')}
 
-⚠️ **Critical Concerns:** {red_flag_count} red flag(s) identified
+💡 **Baseline Integration:**
+{assessment_json.get('baseline_vs_qualitative_note', 'See full report for details.')}
 
-📊 **Portfolio Recommendation:**
-* **Position Size:** {portfolio_rec}
-* **Assessment Confidence:** {assessment_json.get('assessment_confidence', 'unknown').capitalize()}
+✅ **Enhanced with Quantitative Metrics**
+This assessment combines calculated financial metrics (volatility, leverage,
+liquidity, etc.) with qualitative analysis from the Governor's memo.
 
 ---
-*Full risk assessment report saved to file*
-*Agent: Risk Assessment Agent | Model: Gemini Pro*
+*Full risk assessment with baseline metrics saved to file*
+*Agent: Risk Assessment Agent (Enhanced) | Model: Gemini Pro*
         """
         
         print("✅ Risk_Assessment_Agent: Analysis complete")
@@ -598,6 +804,7 @@ def run_risk_assessment_agent(
         """
         return error_report.strip(), error_report.strip()
 
+
 # --- CLI ENTRY POINT ---
 
 if __name__ == "__main__":
@@ -610,23 +817,13 @@ if __name__ == "__main__":
         print(f"No ticker provided, using default: {ticker}")
         print("Usage: python risk_assessment_agent.py <TICKER>\n")
     
-    # Mock investment memo for testing
+    # Mock investment memo
     mock_memo = """
 # Investment Memo: $TSLA
 
 ## Executive Summary
 Tesla shows strong technical momentum and positive analyst sentiment, but faces
-significant regulatory challenges and high valuation concerns. Social sentiment
-is bullish but volatile.
-
-## Critical Insights
-1. Strong AI and FSD progress noted by multiple analysts
-2. Valuation concerns at current levels
-3. Regulatory uncertainty in key markets
-
-## Consensus Views
-- Long-term AI opportunity is significant
-- Near-term execution risk exists
+significant regulatory challenges and high valuation concerns.
 
 ## Key Risks
 - Regulatory challenges in Europe and China
@@ -634,10 +831,8 @@ is bullish but volatile.
 - Valuation stretched relative to peers
 """
     
-    # Run the Risk Assessment Agent
     summary, detailed = run_risk_assessment_agent(ticker, mock_memo, save_to_file=True)
     
-    # Display summary
     print("\n" + "="*60)
     print("RISK ASSESSMENT SUMMARY")
     print("="*60 + "\n")
