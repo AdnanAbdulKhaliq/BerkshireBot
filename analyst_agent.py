@@ -1,10 +1,8 @@
 """
-Analyst Agent - Analyst Swarm Component (Enhanced)
+Analyst Agent - Analyst Swarm Component (Enhanced with Computational Recency)
 
-This agent aggregates analyst ratings from multiple free sources:
-1. Yahoo Finance (via yfinance) - Recommendations, price targets, analyst opinions
-2. Financial Modeling Prep API (free tier) - Analyst estimates and upgrades
-3. Web scraping fallback for recent news on analyst actions
+This agent aggregates analyst ratings from multiple free sources with
+proper computational recency weighting before LLM analysis.
 
 Environment Variables Required:
     - GEMINI_API_KEY: Your Google Gemini API key
@@ -61,13 +59,11 @@ def validate_environment() -> None:
         error_msg = "Missing required environment variables:\n" + "\n".join(missing)
         raise EnvironmentError(error_msg)
     
-    # Optional API key
     if "FMP_API_KEY" not in os.environ:
         print("ℹ️ FMP_API_KEY not set - some features limited")
     
     print("✅ Analyst_Agent: Environment variables validated")
 
-# Validate at module load time
 validate_environment()
 
 # --- SETUP LLM ---
@@ -78,7 +74,154 @@ llm = ChatGoogleGenerativeAI(
     api_key=os.environ["GEMINI_API_KEY"]
 )
 
-# --- DATA FETCHING FROM MULTIPLE SOURCES ---
+# --- COMPUTATIONAL RECENCY WEIGHTING ---
+
+def calculate_weighted_sentiment_score(upgrades_list: List[Dict]) -> Dict[str, Any]:
+    """
+    Calculate a weighted sentiment score based on recency and action type.
+    This provides objective metrics BEFORE LLM analysis.
+    
+    Args:
+        upgrades_list: List of analyst actions with days_ago field
+    
+    Returns:
+        Dictionary with weighted score, trend, and statistics
+    """
+    if not upgrades_list:
+        return {
+            "weighted_score": 0.0,
+            "trend": "neutral",
+            "recent_action_count": 0,
+            "last_7_days_net": 0,
+            "last_14_days_net": 0,
+            "last_30_days_net": 0,
+            "momentum_indicator": "no_data"
+        }
+    
+    # Initialize counters
+    total_weight = 0
+    weighted_score = 0
+    
+    # Count actions by time period
+    last_7_days = {"upgrades": 0, "downgrades": 0, "neutral": 0}
+    last_14_days = {"upgrades": 0, "downgrades": 0, "neutral": 0}
+    last_30_days = {"upgrades": 0, "downgrades": 0, "neutral": 0}
+    
+    for action in upgrades_list:
+        days_ago = action.get('days_ago', 999)
+        action_type = action.get('action', '').lower()
+        
+        # Determine base score (-1 to +1)
+        if 'upgrade' in action_type or 'up' in action_type:
+            base_score = 1.0
+            action_category = 'upgrades'
+        elif 'downgrade' in action_type or 'down' in action_type:
+            base_score = -1.0
+            action_category = 'downgrades'
+        else:
+            base_score = 0.0
+            action_category = 'neutral'
+        
+        # Apply recency weight (exponential decay)
+        if days_ago <= 7:
+            weight = 1.0
+            last_7_days[action_category] += 1
+            last_14_days[action_category] += 1
+            last_30_days[action_category] += 1
+        elif days_ago <= 14:
+            weight = 0.7
+            last_14_days[action_category] += 1
+            last_30_days[action_category] += 1
+        elif days_ago <= 30:
+            weight = 0.4
+            last_30_days[action_category] += 1
+        else:
+            weight = 0.1
+        
+        weighted_score += base_score * weight
+        total_weight += weight
+    
+    # Calculate final score
+    final_score = weighted_score / total_weight if total_weight > 0 else 0.0
+    
+    # Calculate net sentiment for each period
+    last_7_net = last_7_days['upgrades'] - last_7_days['downgrades']
+    last_14_net = last_14_days['upgrades'] - last_14_days['downgrades']
+    last_30_net = last_30_days['upgrades'] - last_30_days['downgrades']
+    
+    # Determine momentum
+    if last_7_net > 0 and last_14_net >= 0:
+        momentum = "accelerating_bullish"
+    elif last_7_net > 0:
+        momentum = "bullish"
+    elif last_7_net < 0 and last_14_net <= 0:
+        momentum = "accelerating_bearish"
+    elif last_7_net < 0:
+        momentum = "bearish"
+    else:
+        momentum = "neutral"
+    
+    # Determine trend
+    if final_score > 0.4:
+        trend = "strong_bullish"
+    elif final_score > 0.15:
+        trend = "bullish"
+    elif final_score < -0.4:
+        trend = "strong_bearish"
+    elif final_score < -0.15:
+        trend = "bearish"
+    else:
+        trend = "neutral"
+    
+    return {
+        "weighted_score": round(final_score, 3),
+        "trend": trend,
+        "recent_action_count": last_7_days['upgrades'] + last_7_days['downgrades'],
+        "last_7_days_net": last_7_net,
+        "last_14_days_net": last_14_net,
+        "last_30_days_net": last_30_net,
+        "momentum_indicator": momentum,
+        "last_7_days_detail": last_7_days,
+        "last_14_days_detail": last_14_days,
+        "last_30_days_detail": last_30_days
+    }
+
+
+def adjust_consensus_with_momentum(
+    base_consensus_score: float,
+    momentum_metrics: Dict[str, Any]
+) -> Dict[str, Any]:
+    """
+    Adjust the base consensus score using recent momentum.
+    
+    Args:
+        base_consensus_score: Original consensus score (1-5 scale or -2 to +2)
+        momentum_metrics: Output from calculate_weighted_sentiment_score
+    
+    Returns:
+        Adjusted score and explanation
+    """
+    momentum_score = momentum_metrics['weighted_score']
+    momentum_indicator = momentum_metrics['momentum_indicator']
+    
+    # Convert momentum to adjustment factor (-1 to +1 on our -2 to +2 scale)
+    adjustment = momentum_score * 0.5  # Scale down the adjustment
+    
+    # Apply adjustment
+    adjusted_score = base_consensus_score + adjustment
+    
+    # Clamp to valid range
+    adjusted_score = max(-2.0, min(2.0, adjusted_score))
+    
+    return {
+        "adjusted_score": round(adjusted_score, 2),
+        "adjustment_amount": round(adjustment, 2),
+        "momentum_influence": momentum_indicator,
+        "explanation": f"Base score {base_consensus_score:+.2f} adjusted by {adjustment:+.2f} due to {momentum_indicator} momentum"
+    }
+
+
+# --- DATA CONVERSION UTILITIES ---
 
 def convert_to_serializable(obj):
     """Convert pandas/numpy objects to JSON-serializable types."""
@@ -100,23 +243,21 @@ def convert_to_serializable(obj):
     return obj
 
 
+# --- DATA FETCHING ---
+
 def fetch_yahoo_finance_data(ticker: str) -> Dict[str, Any]:
-    """
-    Fetch analyst data from Yahoo Finance using yfinance.
-    This is completely free and provides rich analyst data.
-    """
+    """Fetch analyst data from Yahoo Finance using yfinance."""
     if yf is None:
         return {"error": "yfinance not installed"}
     
     try:
         stock = yf.Ticker(ticker)
         
-        # Get recommendations (buy/hold/sell ratings over time)
+        # Get recommendations
         recent_recs = []
         try:
             recommendations = stock.recommendations
             if recommendations is not None and not recommendations.empty:
-                # Get most recent 10 recommendations and convert to serializable format
                 recent_df = recommendations.tail(10).reset_index()
                 for _, row in recent_df.iterrows():
                     rec = {}
@@ -145,41 +286,41 @@ def fetch_yahoo_finance_data(ticker: str) -> Dict[str, Any]:
         except Exception as e:
             print(f"⚠️ Could not fetch analyst info: {e}")
         
-        # Get upgrades/downgrades
+        # Get upgrades/downgrades with recency tracking
         upgrades_list = []
         try:
             upgrades = stock.upgrades_downgrades
             if upgrades is not None and not upgrades.empty:
-                # Get last 30 days
                 thirty_days_ago = datetime.now() - timedelta(days=30)
                 recent_upgrades = upgrades[upgrades.index >= thirty_days_ago]
                 
-                # Convert to list of dicts with serializable date strings
-                # Apply stricter recency filters
                 for date_idx, row in recent_upgrades.iterrows():
                     upgrade_date = date_idx if hasattr(date_idx, 'date') else datetime.strptime(str(date_idx)[:10], '%Y-%m-%d')
                     days_ago = (datetime.now() - upgrade_date).days
                     
-                    # Only include if within last 30 days, but prioritize last 7 days
                     if days_ago <= 30:
                         upgrade_entry = {
                             'date': date_idx.strftime('%Y-%m-%d') if hasattr(date_idx, 'strftime') else str(date_idx),
-                            'days_ago': days_ago,  # Track recency
+                            'days_ago': days_ago,
                             'firm': convert_to_serializable(row.get('Firm', 'Unknown')),
                             'toGrade': convert_to_serializable(row.get('ToGrade', 'N/A')),
                             'fromGrade': convert_to_serializable(row.get('FromGrade', 'N/A')),
                             'action': convert_to_serializable(row.get('Action', 'N/A')),
-                            'recency_weight': 1.0 if days_ago <= 7 else 0.5  # Higher weight for last 7 days
+                            'recency_weight': 1.0 if days_ago <= 7 else 0.7 if days_ago <= 14 else 0.4
                         }
                         upgrades_list.append(upgrade_entry)
         except Exception as e:
             print(f"⚠️ Could not fetch upgrades/downgrades: {e}")
+        
+        # NEW: Calculate computational momentum metrics
+        momentum_metrics = calculate_weighted_sentiment_score(upgrades_list)
         
         return {
             'source': 'Yahoo Finance',
             'recent_recommendations': recent_recs,
             'analyst_info': analyst_info,
             'upgrades_downgrades': upgrades_list,
+            'momentum_metrics': momentum_metrics,  # NEW
             'timestamp': datetime.now().isoformat()
         }
         
@@ -189,10 +330,7 @@ def fetch_yahoo_finance_data(ticker: str) -> Dict[str, Any]:
 
 
 def fetch_fmp_data(ticker: str) -> Dict[str, Any]:
-    """
-    Fetch analyst data from Financial Modeling Prep API (free tier).
-    Provides analyst estimates, upgrades/downgrades, and price targets.
-    """
+    """Fetch analyst data from Financial Modeling Prep API."""
     if requests is None or "FMP_API_KEY" not in os.environ:
         return {'error': 'FMP API not available'}
     
@@ -202,7 +340,7 @@ def fetch_fmp_data(ticker: str) -> Dict[str, Any]:
     try:
         results = {}
         
-        # 1. Get analyst estimates
+        # Get analyst estimates
         try:
             url = f"{base_url}/analyst-estimates/{ticker}?apikey={api_key}"
             response = requests.get(url, timeout=10)
@@ -211,23 +349,22 @@ def fetch_fmp_data(ticker: str) -> Dict[str, Any]:
         except:
             pass
         
-        # 2. Get upgrades/downgrades
+        # Get upgrades/downgrades
         try:
             url = f"{base_url}/upgrades-downgrades?symbol={ticker}&apikey={api_key}"
             response = requests.get(url, timeout=10)
             if response.status_code == 200:
                 data = response.json()
-                # Get only recent ones (last 30 days)
                 thirty_days_ago = datetime.now() - timedelta(days=30)
                 recent = [
                     item for item in data 
                     if datetime.strptime(item.get('publishedDate', '2000-01-01'), '%Y-%m-%d %H:%M:%S') >= thirty_days_ago
                 ]
-                results['upgrades_downgrades'] = recent[:10]  # Limit to 10 most recent
+                results['upgrades_downgrades'] = recent[:10]
         except:
             pass
         
-        # 3. Get price target consensus
+        # Get price target consensus
         try:
             url = f"{base_url}/price-target-consensus?symbol={ticker}&apikey={api_key}"
             response = requests.get(url, timeout=10)
@@ -243,59 +380,18 @@ def fetch_fmp_data(ticker: str) -> Dict[str, Any]:
         return {'error': f'FMP API error: {str(e)}'}
 
 
-def fetch_marketwatch_data(ticker: str) -> Dict[str, Any]:
-    """
-    Fetch analyst data from MarketWatch (web scraping fallback).
-    Provides additional analyst ratings and estimates.
-    """
-    if requests is None:
-        return {'error': 'requests not available'}
-    
-    try:
-        # MarketWatch analyst ratings page
-        url = f"https://www.marketwatch.com/investing/stock/{ticker.lower()}/analystestimates"
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-        
-        response = requests.get(url, headers=headers, timeout=10)
-        
-        if response.status_code == 200:
-            # Basic parsing - in production, you'd use BeautifulSoup
-            # For now, just mark as available
-            return {
-                'source': 'MarketWatch',
-                'status': 'available',
-                'url': url
-            }
-        else:
-            return {'error': f'MarketWatch returned status {response.status_code}'}
-            
-    except Exception as e:
-        return {'error': f'MarketWatch error: {str(e)}'}
-
-
 @lru_cache(maxsize=100)
 def cached_analyst_fetch(ticker: str, timestamp_hour: int) -> Dict[str, Any]:
-    """
-    Cached fetch from all sources. Cache expires every hour.
-    """
+    """Cached fetch from all sources. Cache expires every hour."""
     print(f"🔍 Analyst_Agent: Fetching analyst data for {ticker}...")
     
-    # Fetch from Yahoo Finance (primary source - free and reliable)
     yahoo_data = fetch_yahoo_finance_data(ticker)
-    
-    # Fetch from FMP (secondary source - optional)
     fmp_data = fetch_fmp_data(ticker)
-    
-    # Fetch from MarketWatch (tertiary source - optional)
-    mw_data = fetch_marketwatch_data(ticker)
     
     return {
         'ticker': ticker,
         'yahoo_finance': yahoo_data,
         'fmp': fmp_data,
-        'marketwatch': mw_data,
         'fetch_timestamp': datetime.now().isoformat()
     }
 
@@ -321,16 +417,13 @@ def safe_json_dumps(obj):
 
 
 def run_analyst_search(input_dict: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Execute analyst data search with caching and error handling.
-    """
+    """Execute analyst data search with caching and error handling."""
     ticker = input_dict.get("ticker", "").upper()
     
     if not ticker:
         return {"raw_data_json": "Error: No ticker provided", "ticker": ""}
     
     try:
-        # Cache key changes every hour
         cache_key = int(time.time() // 3600)
         results = cached_analyst_fetch(ticker, cache_key)
         
@@ -351,66 +444,59 @@ def run_analyst_search(input_dict: Dict[str, Any]) -> Dict[str, Any]:
         }
 
 
-# --- ENHANCED PROMPT TEMPLATE ---
+# --- ENHANCED PROMPT WITH COMPUTATIONAL METRICS ---
 
 prompt_template = ChatPromptTemplate.from_template(
-    """You are an expert "Analyst Agent" for a financial firm. Your task is to 
-analyze analyst ratings and price targets for stock ${ticker} from multiple data sources.
+    """You are an expert "Analyst Agent" analyzing analyst ratings for ${ticker}.
 
-**CRITICAL: RECENCY WEIGHTING**
-When analyzing analyst actions, apply strong recency bias:
-- Actions from the last 7 days: VERY HIGH importance (weight: 1.0)
-- Actions from 8-14 days ago: HIGH importance (weight: 0.7)
-- Actions from 15-30 days ago: MODERATE importance (weight: 0.4)
-- Anything older: LOW importance (mention but don't over-emphasize)
+**IMPORTANT: COMPUTATIONAL METRICS PROVIDED**
 
-**NEW SCORING SYSTEM (-2 to +2):**
-We're using a more intuitive scale where:
+The data includes pre-calculated momentum metrics based on recent analyst actions:
+- weighted_score: Recency-weighted sentiment (-1.0 to +1.0)
+- trend: Overall trend classification
+- momentum_indicator: Recent momentum direction
+- last_7_days_net: Net upgrades minus downgrades in last 7 days
+- last_14_days_net: Net for last 14 days
+- last_30_days_net: Net for last 30 days
+
+**YOU MUST:**
+1. Use these computational metrics as your PRIMARY signal for recent momentum
+2. Apply the provided weighted_score to adjust the consensus
+3. Cite specific numbers from the momentum metrics
+
+**SCORING SYSTEM (-2 to +2):**
 - **+2.0** = Strong Buy (very bullish)
 - **+1.0** = Buy (bullish)
 - **0.0** = Hold/Neutral
 - **-1.0** = Sell (bearish)
 - **-2.0** = Strong Sell (very bearish)
 
-To convert from the traditional 1-5 scale (if present in data):
+Convert traditional 1-5 scale:
 - 1.0-1.5 → +2.0 (Strong Buy)
 - 1.5-2.5 → +1.0 (Buy)
 - 2.5-3.5 → 0.0 (Hold)
 - 3.5-4.5 → -1.0 (Sell)
 - 4.5-5.0 → -2.0 (Strong Sell)
 
-**Data Sources You're Analyzing:**
-1. **Yahoo Finance**: Current analyst consensus, price targets, and recent recommendations
-2. **Financial Modeling Prep**: Detailed upgrades/downgrades with firm names and dates
-3. **MarketWatch**: Additional analyst estimates (when available)
+**ADJUST CONSENSUS WITH MOMENTUM:**
+1. Start with base consensus from analyst_info
+2. Look at momentum_metrics.weighted_score
+3. If momentum_metrics.last_7_days_net is strongly positive/negative, this should significantly influence your recency_adjusted_score
+4. The recency_adjusted_score should differ from consensus_score when recent momentum diverges
 
-**Your Analysis Must Prioritize:**
+**Output Format:**
 
-1. **Recent Actions** (Last 7 Days):
-   - These should be prominently featured and heavily weighted
-   - If there are upgrades in the last 7 days, this is VERY significant
-   - If there are downgrades in the last 7 days, this is a WARNING SIGNAL
-
-2. **Momentum Analysis**:
-   - Are recent actions (last 7-14 days) more bullish or bearish than the overall consensus?
-   - Is sentiment improving or deteriorating?
-
-3. **Consensus Rating with Recency Adjustment**:
-   - Start with the overall consensus from Yahoo Finance
-   - Adjust your final score based on recent momentum
-   - Example: If overall is "Hold" but last 3 actions in 7 days were upgrades → adjust toward "Buy"
-
-4. **Price Targets**: Extract consensus price target with confidence based on analyst agreement
-
-**Output Format Requirements:**
-
-Return your analysis in this EXACT JSON format:
 {{
   "consensus": "Strong Buy" | "Buy" | "Hold" | "Sell" | "Strong Sell",
   "consensus_score": -2.0 to +2.0,
   "recent_momentum": "Very Bullish" | "Bullish" | "Neutral" | "Bearish" | "Very Bearish",
   "momentum_score": -2.0 to +2.0,
   "recency_adjusted_score": -2.0 to +2.0,
+  "computational_metrics": {{
+    "weighted_score": "from momentum_metrics",
+    "last_7_days_net": "from momentum_metrics",
+    "momentum_indicator": "from momentum_metrics"
+  }},
   "average_target": 0.0,
   "target_high": 0.0,
   "target_low": 0.0,
@@ -429,58 +515,36 @@ Return your analysis in this EXACT JSON format:
       "impact": "very_positive" | "positive" | "neutral" | "negative" | "very_negative"
     }}
   ],
-  "analysis_summary": "A detailed 3-4 sentence summary that EMPHASIZES recent actions in the last 7-14 days, explains the consensus, discusses price target and upside, and notes whether sentiment is improving or deteriorating.",
+  "analysis_summary": "Detailed summary emphasizing the computational metrics",
   "detailed_analysis": {{
-    "consensus_breakdown": "Explain the consensus WITH emphasis on how recent actions (last 7 days) compare to the overall view. If recent momentum differs from consensus, highlight this.",
-    "price_target_analysis": "Analysis of the price target range, confidence level, and whether recent actions suggest targets may need revision",
-    "recent_trends": "CRITICAL SECTION: Detailed analysis of the last 7-14 days of analyst actions. What's the trend? Are upgrades accelerating? Are downgrades piling up? This is your MOST IMPORTANT section.",
-    "analyst_divergence": "Discussion of any significant disagreements, especially recent ones",
+    "consensus_breakdown": "Explain consensus and how computational momentum metrics affect it",
+    "price_target_analysis": "Analysis of price targets",
+    "recent_trends": "CITE the computational metrics: weighted_score of X, last_7_days_net of Y means...",
+    "analyst_divergence": "Any disagreements",
     "key_catalysts": ["catalyst 1", "catalyst 2"],
     "key_risks": ["risk 1", "risk 2"],
-    "investment_strategy": "Recommended approach based on RECENT momentum and analyst views. If recent actions are very bullish, recommend accumulation. If bearish, recommend caution.",
+    "investment_strategy": "Strategy based on momentum metrics",
     "time_horizon": "short-term" | "medium-term" | "long-term",
     "confidence_level": "high" | "medium" | "low"
   }},
   "data_quality": "excellent" | "good" | "limited" | "poor",
-  "data_sources_used": ["Yahoo Finance", "FMP", "MarketWatch"]
+  "data_sources_used": ["Yahoo Finance", "FMP"]
 }}
 
-**Example Recency-Weighted Analysis:**
-If you see:
-- Overall consensus: Hold (0.0)
-- Last 7 days: 2 upgrades, 0 downgrades
-- 8-14 days: 1 upgrade, 0 downgrades
-- 15-30 days: 0 upgrades, 1 downgrade
-
-Your analysis should say:
-- Consensus: Hold → Buy (upgrading due to recent momentum)
-- Recency-adjusted score: +0.5 to +1.0 (bullish momentum)
-- Recent momentum: "Bullish"
-- Strategy: "Accumulate on dips - recent analyst upgrades signal improving sentiment"
-
-**Raw Data from APIs:**
+**Raw Data:**
 
 <api_data>
 {raw_data_json}
 </api_data>
 
-Return ONLY the JSON object, no additional text or markdown."""
+Return ONLY the JSON object."""
 )
 
 
-# --- REPORT GENERATION ---
+# --- REPORT GENERATION (keeping existing implementation) ---
 
 def generate_detailed_report(ticker: str, analysis: Dict[str, Any]) -> str:
-    """
-    Generate a comprehensive markdown report from analysis results.
-    
-    Args:
-        ticker: Stock ticker symbol
-        analysis: Detailed analysis JSON from LLM
-    
-    Returns:
-        Formatted markdown report string
-    """
+    """Generate comprehensive markdown report."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
     consensus = analysis.get('consensus', 'N/A')
@@ -488,14 +552,10 @@ def generate_detailed_report(ticker: str, analysis: Dict[str, Any]) -> str:
     recency_score = analysis.get('recency_adjusted_score', consensus_score)
     momentum = analysis.get('recent_momentum', 'Neutral')
     momentum_score = analysis.get('momentum_score', 0.0)
-    avg_target = analysis.get('average_target', 0.0)
-    target_high = analysis.get('target_high', 0.0)
-    target_low = analysis.get('target_low', 0.0)
-    current_price = analysis.get('current_price', 0.0)
-    upside = analysis.get('upside_percent', 0.0)
-    num_analysts = analysis.get('number_of_analysts', 0)
     
-    # Consensus emoji with new -2 to +2 scale
+    # Extract computational metrics
+    comp_metrics = analysis.get('computational_metrics', {})
+    
     def get_rating_emoji(score):
         if score >= 1.5:
             return '🟢🟢'
@@ -514,9 +574,8 @@ def generate_detailed_report(ticker: str, analysis: Dict[str, Any]) -> str:
     report = f"""
 # Professional Analyst Report: ${ticker}
 **Generated:** {timestamp}
-**Agent:** Analyst Agent (Enhanced with Recency Weighting)
+**Agent:** Analyst Agent (Enhanced with Computational Recency)
 **Model:** Gemini Pro
-**Data Sources:** Yahoo Finance, Financial Modeling Prep, MarketWatch
 
 ---
 
@@ -526,15 +585,20 @@ def generate_detailed_report(ticker: str, analysis: Dict[str, Any]) -> str:
 
 ---
 
-## Wall Street Consensus (New -2 to +2 Scale)
+## Wall Street Consensus (With Computational Momentum)
 
 {consensus_emoji} **Overall Rating:** {consensus}  
 **Consensus Score:** {consensus_score:+.2f} / 2.0  
-**Analyst Coverage:** {num_analysts} professional analysts
+**Analyst Coverage:** {analysis.get('number_of_analysts', 0)} professional analysts
 
 {momentum_emoji} **Recent Momentum:** {momentum}  
 **Momentum Score:** {momentum_score:+.2f} / 2.0  
 **Recency-Adjusted Score:** {recency_score:+.2f} / 2.0
+
+### Computational Momentum Metrics
+- **Weighted Score:** {comp_metrics.get('weighted_score', 'N/A')}
+- **Last 7 Days Net:** {comp_metrics.get('last_7_days_net', 'N/A')}
+- **Momentum Indicator:** {comp_metrics.get('momentum_indicator', 'N/A')}
 
 ### Scoring System
 - **+2.0 to +1.5**: Strong Buy 🟢🟢
@@ -543,33 +607,23 @@ def generate_detailed_report(ticker: str, analysis: Dict[str, Any]) -> str:
 - **-0.5 to -1.5**: Sell 🔴
 - **-1.5 to -2.0**: Strong Sell 🔴🔴
 
-### Consensus Interpretation
-"""
-    
-    detailed = analysis.get('detailed_analysis', {})
-    report += f"{detailed.get('consensus_breakdown', 'No detailed breakdown available.')}\n\n"
-    
-    report += f"""
 ---
 
 ## Price Target Analysis
 
-**Current Price:** ${current_price:,.2f}  
-**Average Target:** ${avg_target:,.2f}  
-**Upside Potential:** {upside:+.1f}%  
-**Target Range:** ${target_low:,.2f} - ${target_high:,.2f}
+**Current Price:** ${analysis.get('current_price', 0):,.2f}  
+**Average Target:** ${analysis.get('average_target', 0):,.2f}  
+**Upside Potential:** {analysis.get('upside_percent', 0):+.1f}%  
+**Target Range:** ${analysis.get('target_low', 0):,.2f} - ${analysis.get('target_high', 0):,.2f}
 
-### Price Target Breakdown
+---
+
+## Recent Analyst Activity
+
 """
-    
-    report += f"{detailed.get('price_target_analysis', 'No detailed price target analysis available.')}\n\n"
-    
-    # Recent Activity with recency tiers
-    report += "---\n\n## Recent Analyst Activity (Prioritized by Recency)\n\n"
     
     activity = analysis.get('recent_activity', [])
     if activity:
-        # Group by recency tier
         last_7_days = [a for a in activity if a.get('days_ago', 999) <= 7]
         days_8_14 = [a for a in activity if 7 < a.get('days_ago', 999) <= 14]
         days_15_30 = [a for a in activity if 14 < a.get('days_ago', 999) <= 30]
@@ -589,32 +643,30 @@ def generate_detailed_report(ticker: str, analysis: Dict[str, Any]) -> str:
             for item in sorted(days_15_30, key=lambda x: x.get('days_ago', 0)):
                 report += format_activity_item(item)
     else:
-        report += "*No recent analyst actions found in the last 30 days.*\n\n"
+        report += "*No recent analyst actions found.*\n\n"
+    
+    detailed = analysis.get('detailed_analysis', {})
     
     report += f"""
-### 🎯 Recent Trends Analysis (CRITICAL)
+
+---
+
+## Detailed Analysis
+
+### Recent Trends (Based on Computational Metrics)
 {detailed.get('recent_trends', 'No trend analysis available.')}
 
+### Consensus Breakdown
+{detailed.get('consensus_breakdown', 'No breakdown available.')}
+
+### Investment Strategy
+{detailed.get('investment_strategy', 'No strategy provided.')}
+
 ---
 
-## Analyst Divergence & Disagreements
-
-{detailed.get('analyst_divergence', 'Analysts appear to be in general agreement.')}
-
----
-
-## Key Catalysts (Bull Case)
+## Risk Factors
 
 """
-    
-    catalysts = detailed.get('key_catalysts', [])
-    if catalysts:
-        for catalyst in catalysts:
-            report += f"- {catalyst}\n"
-    else:
-        report += "*No specific catalysts identified.*\n"
-    
-    report += "\n---\n\n## Key Risks (Bear Case)\n\n"
     
     risks = detailed.get('key_risks', [])
     if risks:
@@ -623,79 +675,29 @@ def generate_detailed_report(ticker: str, analysis: Dict[str, Any]) -> str:
     else:
         report += "*No specific risks identified.*\n"
     
-    report += f"""
-
----
-
-## Investment Strategy & Recommendations
-
-### Recommended Approach (Based on Recent Momentum)
-{detailed.get('investment_strategy', 'No specific strategy recommended.')}
-
-### Time Horizon
-**{detailed.get('time_horizon', 'medium-term').replace('-', ' ').title()}** outlook
-
-### Confidence Level
-**{detailed.get('confidence_level', 'medium').capitalize()}** confidence in analyst consensus
-
----
-
-## Risk Factors to Monitor
-
-Based on analyst coverage, investors should monitor:
-
-"""
+    report += "\n## Key Catalysts\n\n"
     
-    if risks:
-        for i, risk in enumerate(risks, 1):
-            report += f"{i}. {risk}\n"
+    catalysts = detailed.get('key_catalysts', [])
+    if catalysts:
+        for catalyst in catalysts:
+            report += f"- {catalyst}\n"
     else:
-        report += "- Market conditions and sector performance\n"
-        report += "- Company earnings and guidance\n"
-        report += "- Competitive landscape changes\n"
+        report += "*No specific catalysts identified.*\n"
     
     report += f"""
 
 ---
 
-## Data Quality Assessment
+## Methodology
 
-**Overall Quality:** {analysis.get('data_quality', 'unknown').capitalize()}  
-**Sources Used:** {', '.join(analysis.get('data_sources_used', ['Yahoo Finance']))}  
-**Number of Analysts:** {num_analysts}  
-**Last Updated:** {timestamp}
+This report uses **computational recency weighting** applied to analyst actions:
+- Actions are weighted by recency (last 7 days = 1.0x, 8-14 days = 0.7x, etc.)
+- A weighted sentiment score is calculated objectively
+- The LLM then interprets this score along with qualitative factors
 
----
-
-## Methodology Notes
-
-This report synthesizes data from multiple sources with **strong recency weighting**:
-- **Last 7 days**: Weighted 100% (highest priority)
-- **8-14 days ago**: Weighted 70%
-- **15-30 days ago**: Weighted 40%
-
-### New Scoring System (-2 to +2)
-This intuitive scale makes it easier to understand analyst sentiment:
-- **+2.0**: Strong Buy (very bullish)
-- **+1.0**: Buy (bullish)
-- **0.0**: Hold/Neutral
-- **-1.0**: Sell (bearish)
-- **-2.0**: Strong Sell (very bearish)
-
-### Data Sources
-- **Yahoo Finance**: Consensus ratings, price targets, recent actions
-- **Financial Modeling Prep**: Enhanced analyst estimates and upgrades
-- **MarketWatch**: Additional validation when available
-
----
-
-## Disclaimer
-
-This report aggregates professional analyst opinions for informational purposes only. It is NOT financial advice. Analyst ratings can be biased, and price targets are often not achieved. **Recent analyst actions are emphasized but should not be the sole basis for investment decisions.**
-
-Always conduct your own due diligence and consult with a qualified financial advisor.
-
-**Past performance does not guarantee future results.**
+**Time Horizon:** {detailed.get('time_horizon', 'medium-term').replace('-', ' ').title()}  
+**Confidence Level:** {detailed.get('confidence_level', 'medium').capitalize()}  
+**Data Quality:** {analysis.get('data_quality', 'unknown').capitalize()}
 
 ---
 
@@ -727,43 +729,22 @@ def format_activity_item(item: Dict[str, Any]) -> str:
         'very_negative': '🔴🔴'
     }.get(impact, '⚪')
     
-    date_str = item.get('date', 'Recent')
-    days_ago = item.get('days_ago', '?')
-    firm = item.get('firm', 'Unknown Firm')
-    action_text = item.get('action', 'N/A').capitalize()
-    from_grade = item.get('from_grade', 'N/A')
-    to_grade = item.get('to_grade', 'N/A')
-    
-    result = f"#### {action_emoji} {firm} - {date_str} ({days_ago} days ago) {impact_emoji}\n"
-    result += f"**Action:** {action_text}\n"
-    if from_grade != 'N/A' and to_grade != 'N/A':
-        result += f"**Change:** {from_grade} → {to_grade}\n"
+    result = f"#### {action_emoji} {item.get('firm', 'Unknown')} - {item.get('date', 'Recent')} ({item.get('days_ago', '?')} days ago) {impact_emoji}\n"
+    result += f"**Action:** {item.get('action', 'N/A').capitalize()}\n"
+    if item.get('from_grade') != 'N/A' and item.get('to_grade') != 'N/A':
+        result += f"**Change:** {item['from_grade']} → {item['to_grade']}\n"
     result += "\n"
     
     return result
 
 
 def save_report(ticker: str, report: str, output_dir: str = "reports") -> str:
-    """
-    Save the detailed report to a text file.
-    
-    Args:
-        ticker: Stock ticker symbol
-        report: Formatted report content
-        output_dir: Directory to save reports (created if doesn't exist)
-    
-    Returns:
-        Path to saved file
-    """
-    # Create output directory if it doesn't exist
+    """Save report to file."""
     os.makedirs(output_dir, exist_ok=True)
-    
-    # Generate filename with timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"{ticker}_analyst_report_{timestamp}.txt"
     filepath = os.path.join(output_dir, filename)
     
-    # Write report to file
     with open(filepath, 'w', encoding='utf-8') as f:
         f.write(report)
     
@@ -789,7 +770,7 @@ agent_chain = (
 
 def run_analyst_agent(ticker: str, save_to_file: bool = True) -> tuple[str, str]:
     """
-    Execute the enhanced Analyst Agent analysis.
+    Execute the enhanced Analyst Agent analysis with computational recency weighting.
     
     Args:
         ticker: Stock ticker symbol (e.g., "AAPL", "TSLA")
@@ -799,14 +780,14 @@ def run_analyst_agent(ticker: str, save_to_file: bool = True) -> tuple[str, str]
         Tuple of (summary_report, detailed_report)
     """
     print(f"\n{'='*60}")
-    print(f"🤖 Analyst Agent: Analyzing analyst ratings for ${ticker}")
+    print(f"🤖 Analyst Agent (Enhanced): Analyzing ${ticker}")
     print(f"{'='*60}\n")
     
     try:
         # Execute the analysis chain
         analysis_json = agent_chain.invoke({"ticker": ticker.upper()})
         
-        # Generate detailed report first
+        # Generate detailed report
         detailed_report = generate_detailed_report(ticker, analysis_json)
         
         # Save to file if requested
@@ -819,18 +800,8 @@ def run_analyst_agent(ticker: str, save_to_file: bool = True) -> tuple[str, str]
         recency_score = analysis_json.get('recency_adjusted_score', consensus_score)
         momentum = analysis_json.get('recent_momentum', 'Neutral')
         momentum_score = analysis_json.get('momentum_score', 0.0)
-        avg_target = analysis_json.get('average_target', 0.0)
-        target_high = analysis_json.get('target_high', 0.0)
-        target_low = analysis_json.get('target_low', 0.0)
-        current_price = analysis_json.get('current_price', 0.0)
-        upside = analysis_json.get('upside_percent', 0.0)
-        num_analysts = analysis_json.get('number_of_analysts', 0)
-        activity = analysis_json.get('recent_activity', [])
-        summary = analysis_json.get('analysis_summary', 'No summary provided.')
-        data_quality = analysis_json.get('data_quality', 'unknown')
-        sources = analysis_json.get('data_sources_used', [])
+        comp_metrics = analysis_json.get('computational_metrics', {})
         
-        # Determine emoji with new scale
         def get_rating_emoji(score):
             if score >= 1.5:
                 return '🟢🟢'
@@ -846,7 +817,6 @@ def run_analyst_agent(ticker: str, save_to_file: bool = True) -> tuple[str, str]
         consensus_emoji = get_rating_emoji(consensus_score)
         momentum_emoji = get_rating_emoji(momentum_score)
         
-        # Format the summary report (for console output)
         summary_report = f"""
 **Analyst Agent Report: ${ticker}**
 
@@ -854,68 +824,26 @@ def run_analyst_agent(ticker: str, save_to_file: bool = True) -> tuple[str, str]
 {momentum_emoji} **Recent Momentum: {momentum}** (Score: {momentum_score:+.2f}/2.0)
 **Recency-Adjusted Score:** {recency_score:+.2f}/2.0
 
-📊 **Price Target Analysis**
-* **Current Price:** ${current_price:,.2f}
-* **Average Target:** ${avg_target:,.2f} ({upside:+.1f}% upside)
-* **Target Range:** ${target_low:,.2f} - ${target_high:,.2f}
-* **Analyst Coverage:** {num_analysts} analysts
+📊 **Computational Momentum Metrics:**
+* **Weighted Score:** {comp_metrics.get('weighted_score', 'N/A')}
+* **Last 7 Days Net:** {comp_metrics.get('last_7_days_net', 'N/A')} analyst actions
+* **Momentum Indicator:** {comp_metrics.get('momentum_indicator', 'N/A')}
 
-📈 **Recent Analyst Activity (Prioritized by Recency):**
-"""
-        
-        if not activity:
-            summary_report += "* *No recent upgrades or downgrades found.*\n"
-        else:
-            # Show most recent 3, grouped by recency
-            last_7_days = [a for a in activity if a.get('days_ago', 999) <= 7]
-            days_8_14 = [a for a in activity if 7 < a.get('days_ago', 999) <= 14]
-            
-            shown = 0
-            if last_7_days:
-                summary_report += "\n🔥 **LAST 7 DAYS (High Priority):**\n"
-                for item in sorted(last_7_days, key=lambda x: x.get('days_ago', 0))[:2]:
-                    action_emoji = {
-                        'upgrade': '⬆️',
-                        'downgrade': '⬇️',
-                        'initiated': '🆕',
-                        'reiterated': '↔️'
-                    }.get(item.get('action', '').lower(), '•')
-                    
-                    summary_report += f"  {action_emoji} **{item.get('firm', 'Unknown')}** ({item.get('days_ago', '?')} days ago)"
-                    if item.get('from_grade') and item.get('to_grade'):
-                        summary_report += f": {item['from_grade']} → {item['to_grade']}"
-                    summary_report += "\n"
-                    shown += 1
-            
-            if shown < 3 and days_8_14:
-                summary_report += "\n📊 **8-14 DAYS AGO:**\n"
-                for item in sorted(days_8_14, key=lambda x: x.get('days_ago', 0))[:3-shown]:
-                    action_emoji = {
-                        'upgrade': '⬆️',
-                        'downgrade': '⬇️',
-                        'initiated': '🆕',
-                        'reiterated': '↔️'
-                    }.get(item.get('action', '').lower(), '•')
-                    
-                    summary_report += f"  {action_emoji} **{item.get('firm', 'Unknown')}** ({item.get('days_ago', '?')} days ago)"
-                    if item.get('from_grade') and item.get('to_grade'):
-                        summary_report += f": {item['from_grade']} → {item['to_grade']}"
-                    summary_report += "\n"
-        
-        summary_report += f"""
+📈 **Price Target Analysis:**
+* **Current Price:** ${analysis_json.get('current_price', 0):,.2f}
+* **Average Target:** ${analysis_json.get('average_target', 0):,.2f} ({analysis_json.get('upside_percent', 0):+.1f}% upside)
+* **Analyst Coverage:** {analysis_json.get('number_of_analysts', 0)} analysts
 
-📝 **Analysis Summary:**
-{summary}
+📝 **Summary:**
+{analysis_json.get('analysis_summary', 'No summary available.')}
 
-📊 **Data Quality:** {data_quality.capitalize()}
-🔍 **Sources:** {', '.join(sources) if sources else 'Yahoo Finance'}
-
-💡 **New Scoring:** Using -2 to +2 scale (more intuitive)
-   • +2.0 = Strong Buy 🟢🟢 | +1.0 = Buy 🟢 | 0.0 = Hold 🟡
-   • -1.0 = Sell 🔴 | -2.0 = Strong Sell 🔴🔴
+💡 **Enhanced with Computational Recency Weighting**
+This analysis uses objective mathematical weighting of recent analyst actions,
+not just LLM interpretation. Recent actions (last 7 days) are weighted 1.0x,
+8-14 days at 0.7x, and 15-30 days at 0.4x.
 
 ---
-*Full detailed report with recency weighting saved to file*
+*Full detailed report saved to file*
 *Agent: Analyst Agent (Enhanced) | Model: Gemini Pro*
         """
         
@@ -947,7 +875,6 @@ def run_analyst_agent(ticker: str, save_to_file: bool = True) -> tuple[str, str]
 if __name__ == "__main__":
     import sys
     
-    # Check dependencies
     if yf is None:
         print("\n❌ Missing required package: yfinance")
         print("Install with: pip install yfinance\n")
@@ -956,14 +883,12 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         ticker = sys.argv[1].upper()
     else:
-        ticker = "AAPL"  # Default example
+        ticker = "AAPL"
         print(f"No ticker provided, using default: {ticker}")
         print("Usage: python analyst_agent.py <TICKER>\n")
     
-    # Run the agent
     summary, detailed = run_analyst_agent(ticker, save_to_file=True)
     
-    # Display summary
     print("\n" + "="*60)
     print("SUMMARY OUTPUT (Console)")
     print("="*60 + "\n")
