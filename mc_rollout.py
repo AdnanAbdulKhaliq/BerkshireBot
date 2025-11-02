@@ -86,6 +86,7 @@ def MC_sims(ticker, t, sims):
     plt.legend()
     plt.grid(True)
     plt.show()
+    ##
 
     # Summary statistics
     print(f"\nExpected price after {t} days: mean = {forecast[-1].mean():.2f}, std = {forecast[-1].std():.2f}")
