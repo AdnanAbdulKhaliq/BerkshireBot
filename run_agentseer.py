@@ -329,7 +329,7 @@ def start_api_server(host="0.0.0.0", port=8000):
             "❌ FastAPI not installed. Install with: pip install fastapi uvicorn[standard]"
         )
         return
-    
+
     # Create a thread pool executor for running blocking I/O operations
     executor = ThreadPoolExecutor(max_workers=10)
 
@@ -437,9 +437,7 @@ def start_api_server(host="0.0.0.0", port=8000):
         try:
             # Run blocking call in executor
             loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
-                executor, run_sec_agent, ticker, True
-            )
+            result = await loop.run_in_executor(executor, run_sec_agent, ticker, True)
             return result
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
@@ -495,9 +493,7 @@ def start_api_server(host="0.0.0.0", port=8000):
             # Run blocking call in executor
             loop = asyncio.get_event_loop()
             state: AnalystSwarmState = {"ticker": ticker}
-            result = await loop.run_in_executor(
-                executor, chart_agent_node, state
-            )
+            result = await loop.run_in_executor(executor, chart_agent_node, state)
 
             # Return a dictionary with the chart summary and detailed
             return {
@@ -575,7 +571,7 @@ def start_api_server(host="0.0.0.0", port=8000):
 
             # Run blocking calls in executor
             loop = asyncio.get_event_loop()
-            
+
             # First run governor to get the memo
             gov_result = await loop.run_in_executor(
                 executor, run_governor_agent, ticker, agent_reports, False
@@ -626,12 +622,10 @@ def start_api_server(host="0.0.0.0", port=8000):
             ticker = request.ticker.upper()
             t = request.t
             sims = request.sims
-            
+
             # Run blocking call in executor
             loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
-                executor, MC_sims, ticker, t, sims
-            )
+            result = await loop.run_in_executor(executor, MC_sims, ticker, t, sims)
 
             return MC_RolloutResponse(
                 status="success",

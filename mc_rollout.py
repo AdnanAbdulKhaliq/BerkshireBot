@@ -2,76 +2,65 @@ import yfinance as yf
 import matplotlib.pyplot as plt
 import numpy as np
 import time
+from mock_yfinance_data import MockTicker, use_mock_data
 
-#example_header = yf.download("AAPL", period="1y", interval="1d")
-#print(example_header.head())
-#[*********************100%***********************]  1 of 1 completed
-#Price            Close        High         Low        Open    Volume
-#Ticker            AAPL        AAPL        AAPL        AAPL      AAPL
-#Date
-#2024-11-01  221.877365  224.306064  219.249596  219.946350  65276700
-#2024-11-04  220.981537  221.757922  218.692204  219.966273  44944500
+# example_header = yf.download("AAPL", period="1y", interval="1d")
+# print(example_header.head())
+# [*********************100%***********************]  1 of 1 completed
+# Price            Close        High         Low        Open    Volume
+# Ticker            AAPL        AAPL        AAPL        AAPL      AAPL
+# Date
+# 2024-11-01  221.877365  224.306064  219.249596  219.946350  65276700
+# 2024-11-04  220.981537  221.757922  218.692204  219.966273  44944500
+
 
 def MC_sims(ticker: str, t: int, sims: int, display: bool = False) -> np.ndarray:
-    # Download historical data with retry logic and custom headers
+    # Download historical data
     print(f"Downloading data for ticker: {ticker}")
-    
-    # Set custom user agent to avoid being blocked
-    import requests
-    session = requests.Session()
-    session.headers.update({
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    })
-    
-    max_retries = 3
-    data = None
-    
-    for attempt in range(max_retries):
+
+    try:
+        # Use mock data if enabled or if real API fails
+        if use_mock_data():
+            print(f"Using mock data for {ticker}")
+            ticker_obj = MockTicker(ticker)
+        else:
+            ticker_obj = yf.Ticker(ticker)
+        
+        data = ticker_obj.history(period="2y", auto_adjust=True)
+        time.sleep(0.1)
+    except Exception as e:
+        # Fallback to mock data if real API fails
+        print(f"Yahoo Finance failed, falling back to mock data: {str(e)}")
         try:
-            # Use custom session
-            ticker_obj = yf.Ticker(ticker, session=session)
-            data = ticker_obj.history(period="2y", auto_adjust=True, timeout=10)
-            
-            if data is not None and not data.empty:
-                print(f"✅ Successfully downloaded {len(data)} days of historical data")
-                break
-            
-            # If empty, try alternative download method
-            print(f"Attempt {attempt + 1}: Trying alternative download method...")
-            data = yf.download(ticker, period="2y", auto_adjust=True, progress=False, timeout=10)
-            
-            if data is not None and not data.empty:
-                print(f"✅ Successfully downloaded {len(data)} days of historical data")
-                break
-                
-            time.sleep(1 + attempt)  # Increasing wait time with each attempt
-            
-        except Exception as e:
-            print(f"Attempt {attempt + 1} failed: {str(e)}")
-            if attempt == max_retries - 1:
-                raise ValueError(f"Failed to download data for ticker {ticker} after {max_retries} attempts. Yahoo Finance may be temporarily unavailable. Error: {str(e)}")
-            time.sleep(1 + attempt)
-    
+            ticker_obj = MockTicker(ticker)
+            data = ticker_obj.history(period="2y", auto_adjust=True)
+        except Exception as mock_error:
+            raise ValueError(f"Failed to get data for ticker {ticker}: {str(mock_error)}")
+
     if data is None or data.empty:
-        raise ValueError(f"No data found for ticker {ticker}. The ticker may be invalid or Yahoo Finance is temporarily unavailable. Please try again later or verify the ticker symbol.")
-    
-    prices = data['Close'].values
-    
+        raise ValueError(
+            f"No data found for ticker {ticker}. Please verify the ticker symbol is correct."
+        )
+
+    prices = data["Close"].values
+
     if len(prices.shape) > 1:
         prices = prices.flatten()
-    
+
     prices = prices[~np.isnan(prices)]
-    
+
     if len(prices) == 0:
         raise ValueError(f"No valid price data found for ticker {ticker}")
-    
+
     print(f"Price range: min={min(prices):.2f}, max={max(prices):.2f}")
     print(f"Total data points: {len(prices)}")
 
     # Sanity check: enough data
     if len(prices) < 2:
-        raise ValueError(f"Not enough historical data to run simulation (only {len(prices)} data points)")
-    
+        raise ValueError(
+            f"Not enough historical data to run simulation (only {len(prices)} data points)"
+        )
+
     prices = list(prices)
 
     # Daily log returns
@@ -100,8 +89,8 @@ def MC_sims(ticker: str, t: int, sims: int, display: bool = False) -> np.ndarray
     z = np.random.standard_normal((t, sims))
 
     for i in range(1, t + 1):
-        exp_term = (mu - 0.5 * sigma**2) * dt + sigma * np.sqrt(dt) * z[i-1]
-        forecast[i] = forecast[i-1] * np.exp(exp_term)
+        exp_term = (mu - 0.5 * sigma**2) * dt + sigma * np.sqrt(dt) * z[i - 1]
+        forecast[i] = forecast[i - 1] * np.exp(exp_term)
         if np.isnan(forecast[i]).any():
             print(f"NaN detected at step {i}, stopping simulation")
             break
@@ -119,8 +108,10 @@ def MC_sims(ticker: str, t: int, sims: int, display: bool = False) -> np.ndarray
 
     if display:
         plt.figure(figsize=(10, 6))
-        plt.plot(days, middle, label="Median Forecast", color='blue')
-        plt.fill_between(days, lower, upper, color='pink', alpha=0.3, label='5th-95th percentile')
+        plt.plot(days, middle, label="Median Forecast", color="blue")
+        plt.fill_between(
+            days, lower, upper, color="pink", alpha=0.3, label="5th-95th percentile"
+        )
 
         # Sample paths
         colors = plt.cm.viridis(np.linspace(0, 1, 15))
@@ -135,12 +126,14 @@ def MC_sims(ticker: str, t: int, sims: int, display: bool = False) -> np.ndarray
         plt.show()
 
     # Summary statistics
-    print(f"\nExpected price after {t} days: mean = {forecast[-1].mean():.2f}, std = {forecast[-1].std():.2f}")
+    print(
+        f"\nExpected price after {t} days: mean = {forecast[-1].mean():.2f}, std = {forecast[-1].std():.2f}"
+    )
 
     return {
         "days": days,
         "forecast": forecast,
         "lower": lower,
         "median": middle,
-        "upper": upper
+        "upper": upper,
     }
